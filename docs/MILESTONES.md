@@ -45,12 +45,19 @@ Kernel Event -> Behaviour Features -> Anomaly Detection -> Explanation
   detector is refit immediately after a verdict so the model converges on
   analyst ground truth.
 
-## Milestone 3 - Kernel-level telemetry (Linux)
+## Milestone 3 - Kernel-level telemetry (Linux) (DONE)
 
-- `auditd` provider via `ausearch`/`auditd` netlink, plus eBPF (BCC/libbpf)
-  `execve`, `open`, `connect`, `setuid` probes.
-- Tracee integration as an alternative provider.
-- Low-overhead design: ring-buffer aggregation, drop accounting, rate limits.
+- `auditd` provider (`AuditdProvider`): tails `audit.log`, reassembles
+  multi-record events (`SYSCALL` + `EXECVE`/`PATH`/`SOCKADDR`) into
+  `KernelEvent`s, decodes `SOCKADDR` hex to IP:port.
+- eBPF provider (`BPFProvider`): BCC kprobes for `execve`,
+  `tcp_v4_connect`, `setuid` streaming into a perf buffer (experimental).
+- Tracee provider (`TraceeProvider`): consumes `tracee-ebpf --json` output.
+- All three share `normalize_kernel_record` for dict-shaped records and
+  low-overhead primitives: bounded-ring aggregation, drop accounting, and
+  token-bucket rate limits (`backend/telemetry/ring.py`).
+- Provider registry: `create_provider(config)` maps `telemetry.provider`;
+  kernel sources raise a clear error off-Linux.
 
 ## Milestone 4 - Deeper explainability
 

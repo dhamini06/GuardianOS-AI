@@ -101,7 +101,10 @@ The unsupervised baseline is a living model, not a one-shot fit:
 ## 5. Extensibility points
 
 - **New telemetry source**: implement `TelemetryProvider` (Protocol) and
-  register it under `telemetry.provider`. No other layer changes.
+  register it under `telemetry.provider`. Kernel sources (`auditd`, `tracee`,
+  `bpf`) normalise into the same `KernelEvent` model via
+  `backend/telemetry/parsers.py` and share bounded-ring / drop / rate-limit
+  primitives (`backend/telemetry/ring.py`). No other layer changes.
 - **New detector**: implement `AnomalyDetector` (Protocol). Reuse
   `compute_detection_result` for scoring semantics.
 - **New response action**: add a builder + executor handler. Approval rules

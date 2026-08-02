@@ -38,7 +38,14 @@ class TelemetryProvider(Protocol):
     def collect(self) -> list[KernelEvent]: ...   # events since last call
 ```
 
-Implementations: `ProcessMonitor` (psutil), `DemoGenerator` (scripted).
+Implementations: `ProcessMonitor` (psutil), `DemoGenerator` (scripted),
+`AuditdProvider` (audit.log tail, Linux), `TraceeProvider`
+(`tracee-ebpf --json`, Linux), `BPFProvider` (BCC kprobes, Linux). Kernel
+providers share `create_provider(config)` selection
+(`backend/telemetry/factory.py`), the record normalisers in
+`backend/telemetry/parsers.py`, and bounded-ring / drop-accounting /
+rate-limit primitives in `backend/telemetry/ring.py`. Kernel providers also
+expose `drop_stats()` -> `{"dropped_total", "dropped_recent"}`.
 
 ## 3. Feature vector (Layer 2 output)
 
@@ -203,6 +210,10 @@ The pipeline also exposes `is_ready_to_detect()`, `learning_step()`, and
 |---------|-----|---------|---------|
 | telemetry | provider | `process_monitor` | telemetry source name |
 | telemetry | window_seconds | 60 | analysis window |
+| telemetry | audit_log_path | `/var/log/audit/audit.log` | auditd provider source |
+| telemetry | ring_capacity | 10000 | bounded ring of parsed events |
+| telemetry | max_events_per_collect | 500 | per-collect budget |
+| telemetry | rate_limit_per_second | 0 | token-bucket delivery cap |
 | detection | contamination | 0.01 | expected anomaly share |
 | detection | flagged_threshold | 0.60 | anomaly score threshold |
 | detection | min_baseline_samples | 25 | vectors needed before fit |
