@@ -105,14 +105,20 @@ class IsolationForestDetector:
     def predict(self, vector: ProcessFeatures) -> DetectionResult:
         self._require_trained()
         raw = float(-self._model.decision_function(np.asarray([vector.to_vector()]))[0])
-        return compute_detection_result(
+        result = compute_detection_result(
             vector,
             raw_score=raw,
             score_min=self._raw_min,
             score_max=self._raw_max,
             flagged_threshold=self._flagged_threshold,
-            contributions=self.feature_contributions(vector),
+            contributions={},
         )
+        # Attribution is explainability for alerts: it is only meaningful for
+        # flagged chains and is expensive (sampling estimator), so compute it
+        # lazily instead of paying it on every (mostly normal) vector.
+        if result.flagged:
+            result.contributing_features = self.feature_contributions(vector)
+        return result
 
     def feature_contributions(self, vector: ProcessFeatures) -> dict[str, float]:
         """SHAP-style per-feature attribution against the baseline.
