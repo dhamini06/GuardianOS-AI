@@ -1,0 +1,100 @@
+# GuardianOS-AI Architecture
+
+This document describes the layered architecture of GuardianOS-AI, the
+data flow of the MVP, and how each layer will evolve.
+
+## 1. Design principles
+
+1. **Clean architecture, decoupled layers.** Every layer depends only on the
+   small, dependency-free contracts in `backend/core`. Replacing a telemetry
+   source or the ML model must not ripple through the codebase.
+2. **Pull-based, windowed processing.** The pipeline repeatedly asks the
+   telemetry provider for new events, aggregates them into time windows, and
+   scores the resulting behavioural units (process chains).
+3. **Everything explainable.** No layer may emit a bare "threat detected".
+   Scores must be traceable to features, features to events, events to a
+   chain, and chains to MITRE ATT&CK techniques.
+4. **Safe by construction.** Response actions are recommendations first;
+   destructive execution is human-gated and dry-run by default.
+5. **Deterministic development.** A scripted telemetry source makes the entire
+   pipeline reproducible in tests and CI.
+
+## 2. The six layers
+
+| Layer | Package | Responsibility | MVP implementation | Future |
+|-------|---------|----------------|--------------------|--------|
+| 1. Kernel Telemetry | `backend/telemetry` | Collect OS/security events | `ProcessMonitor` (psutil) + `DemoGenerator` | eBPF, auditd, Tracee, fanotify |
+| 2. Feature Engineering | `backend/features` | Raw events -> behaviour vectors | `FeatureExtractor` (per process chain per window) | behaviour graphs, session profiling |
+| 3. AI Detection | `backend/detection` | Learn normal, flag deviation | `IsolationForestDetector` + hybrid signal scoring | autoencoder, supervised classifier, graph anomaly |
+| 4. Explainability | `backend/explainability` | Why + chain + MITRE + narrative | `RuleBasedExplainer` | SHAP-style attribution, LLM narrative |
+| 5. Response | `backend/response` | Recommend / perform remediation | `DecisionEngine` + `ApprovalGate` + `ActionExecutor` | playbooks, containment policies |
+| 6. Dashboard | `backend/dashboard` | Live operator view | `CliDashboard` (rich) | web dashboard, REST/WS API |
+
+## 3. Data flow (MVP vertical slice)
+
+```
+psutil / demo events
+        │  collect()
+        ▼
+  KernelEvent (backend/core/events.py)
+        │  FeatureExtractor.extract(window)
+        ▼
+  ProcessFeatures  (one per behaviour chain)
+        │  IsolationForestDetector.predict()
+        ▼
+  DetectionResult  (anomaly score, confidence, severity, attribution)
+        │  RuleBasedExplainer.explain()
+        ▼
+  Explanation      (reasons, chain, MITRE, narrative)
+        │  DecisionEngine.decide()
+        ▼
+  ResponseAction[] (recommendations)
+        │  ApprovalGate -> ActionExecutor
+        ▼
+  ThreatReport     -> dashboard / API / persistence
+```
+
+### Behavioural units
+
+Detection operates on **process chains** (a family of processes rooted at a
+session/process-group leader), not individual commands. This is what lets the
+system reason about the whole sequence `python -> bash -> curl -> chmod ->
+/tmp payload -> reverse shell` as a single event of interest.
+
+### Hybrid detection model
+
+`anomaly_score = max(ML baseline score, hard-signal score)`:
+
+- **ML baseline score**: normalised Isolation Forest score vs. the machine's
+  learned baseline (contamination-boundary calibration).
+- **Hard-signal score**: composition of well-known malicious primitives
+  (exec from `/tmp`/`/dev/shm`, egress on non-standard high ports, privilege
+  escalation, interpreter spawning interpreter).
+
+This guarantees classic kill chains are always surfaced while the unsupervised
+model still captures long-tail behavioural drift.
+
+## 4. Configuration
+
+Hierarchical: `config/defaults.yaml` <- user file <- dotted overrides
+(e.g. `{"telemetry.window_seconds": 120}`). Exposed as `AppConfig`
+(`backend/core/config.py`).
+
+## 5. Extensibility points
+
+- **New telemetry source**: implement `TelemetryProvider` (Protocol) and
+  register it under `telemetry.provider`. No other layer changes.
+- **New detector**: implement `AnomalyDetector` (Protocol). Reuse
+  `compute_detection_result` for scoring semantics.
+- **New response action**: add a builder + executor handler. Approval rules
+  remain centralised in `ApprovalGate`.
+- **New dashboard**: consume `ThreatReport.to_dict()` and the `EventBuffer`.
+
+## 6. Runtime layout
+
+```
+data/        persisted models, quarantined artifacts
+logs/        structured logs (guardianos.log)
+quarantine/  quarantined executables (when approved)
+config/      YAML configuration
+```

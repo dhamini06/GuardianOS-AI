@@ -1,0 +1,27 @@
+# GuardianOS-AI - containerised deployment (Linux target)
+#
+#   docker compose build
+#   docker compose run --rm guardianos python scripts/run_mvp.py
+#   docker compose run --rm guardianos python scripts/run_dashboard.py
+#
+# The demo needs no special privileges. Kernel-level providers (eBPF, auditd)
+# in later milestones will extend the cap_add/security_opt below.
+
+services:
+  guardianos:
+    build: .
+    image: guardianos-ai:latest
+    container_name: guardianos-ai
+    environment:
+      - GO_LOG_LEVEL=INFO
+    volumes:
+      - ./config:/app/config:ro
+      - guardianos-data:/app/data
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  guardianos-data:
