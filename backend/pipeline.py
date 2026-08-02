@@ -9,6 +9,7 @@ independently replaceable component wired together here (composition root).
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -25,7 +26,11 @@ from backend.feedback.learning import reweight_baseline
 from backend.feedback.ledger import BENIGN, FeedbackLedger
 from backend.response.actions import ActionExecutor
 from backend.response.approval import ApprovalGate
+from backend.response.audit import AuditTrail, Signer
+from backend.response.containment import ContainmentManager
 from backend.response.decision import DecisionEngine
+from backend.response.playbook import PlaybookEngine
+from backend.storage.sqlite import SqliteStorage
 from backend.telemetry.base import TelemetryProvider
 from backend.telemetry.event_bus import EventBuffer
 from backend.telemetry.factory import create_provider
@@ -62,11 +67,36 @@ class GuardianPipeline:
                 timeout=config.explainability.llm_timeout_seconds,
             )
         self.explainer = RuleBasedExplainer(llm=llm)
-        self.decision = DecisionEngine()
-        self.gate = ApprovalGate(
-            auto_approve_destructive=config.response.auto_approve_destructive
+        self.playbook = PlaybookEngine.load(config.response.playbook_path)
+        self.decision = DecisionEngine(playbook=self.playbook)
+
+        signing_secret = config.response.signing_secret or os.environ.get("GUARDIAN_SIGNING_SECRET")
+        self.signer = Signer(signing_secret) if signing_secret else None
+        audit_path = Path(config.data_dir) / config.response.audit_path if config.data_dir else None
+        self.audit = AuditTrail(audit_path) if audit_path else None
+
+        self.containment = ContainmentManager(
+            dry_run=config.response.dry_run,
+            audit=self.audit,
+            signer=self.signer,
         )
-        self.executor = ActionExecutor(dry_run=config.response.dry_run)
+        self.gate = ApprovalGate(
+            auto_approve_destructive=config.response.auto_approve_destructive,
+            audit=self.audit,
+            signer=self.signer,
+        )
+        self.executor = ActionExecutor(
+            dry_run=config.response.dry_run,
+            containment=self.containment,
+            audit=self.audit,
+            signer=self.signer,
+        )
+        self.storage = None
+        if config.storage.enabled and config.data_dir:
+            self.storage = SqliteStorage(
+                Path(config.data_dir) / config.storage.path,
+                max_events=config.storage.max_events,
+            )
 
         self.learning = True
         self._baseline: list[ProcessFeatures] = []
@@ -94,6 +124,9 @@ class GuardianPipeline:
 
     def stop(self) -> None:
         self.telemetry.stop()
+        if self.storage is not None:
+            self.storage.close()
+            self.storage = None
         logger.info("Pipeline stopped (baseline samples=%d)", len(self._baseline))
 
     # -- learning phase ---------------------------------------------------
@@ -205,6 +238,8 @@ class GuardianPipeline:
             )
             self.reports.append(report)
             new_reports.append(report)
+            if self.storage is not None and self.config.storage.save_reports:
+                self.storage.save_report(report)
             logger.warning(
                 "THREAT %s severity=%s pid=%d exe=%s score=%.2f mitre=%s",
                 report.report_id,
@@ -224,6 +259,8 @@ class GuardianPipeline:
         events = self.telemetry.collect()
         if events:
             self.buffer.extend(events)
+            if self.storage is not None and self.config.storage.save_events:
+                self.storage.save_events(events)
 
     def current_window(self) -> list[KernelEvent]:
         return self.buffer.window(self.config.telemetry.window_seconds)
@@ -246,9 +283,17 @@ class GuardianPipeline:
                 return None
             action = report.actions[action_index]
             self.gate.approve(action)
-            self.executor.execute(action)
+            self.executor.execute(action, report_id=report.report_id)
             return report
         return None
+
+    def rollback_actions(self, report_id: str) -> int:
+        """Undo every contained (reversible) response for a report.
+
+        Returns the number of operations actually reversed. Kills cannot be
+        undone and are left in place.
+        """
+        return self.containment.rollback_all(report_id=report_id)
 
     # -- online learning / refit -----------------------------------------
     def _maybe_refit(self) -> None:
