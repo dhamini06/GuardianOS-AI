@@ -1,22 +1,20 @@
 """Concrete remediation actions.
 
-Each action type knows how to describe and (when approved and not in dry-run)
-perform itself. Actions are *safe by construction*: destructive operations
-never run without explicit approval, and ``dry_run`` mode turns every
-execution into a logged recommendation.
+The builder is a static factory for well-formed :class:`ResponseAction`
+instances. The executor is the approval-gated dispatch point: it validates
+that an action was approved, delegates the platform effect to the
+:class:`~backend.response.containment.ContainmentManager` (which records how
+to roll it back), and marks the action ``EXECUTED`` or ``FAILED``. Every
+execution is mirrored to the signed audit trail. ``dry_run`` mode turns every
+execution into a logged recommendation with zero system effect.
 """
 
 from __future__ import annotations
 
-import os
-import shutil
-import sys
-import time
-from pathlib import Path
-
 from backend.core.analysis import ActionStatus, ResponseAction
 from backend.core.logging import get_logger
-from backend.response.base import ActionExecutorError
+from backend.response.audit import AuditTrail, Signer
+from backend.response.containment import ContainmentManager
 
 logger = get_logger("response.actions")
 
@@ -72,79 +70,48 @@ class ResponseActionBuilder:
 
 
 class ActionExecutor:
-    """Executes actions against the live system, honouring dry-run mode."""
+    """Approval-gated dispatch of actions against the live system."""
 
-    def __init__(self, dry_run: bool = True) -> None:
+    def __init__(
+        self,
+        dry_run: bool = True,
+        containment: ContainmentManager | None = None,
+        audit: AuditTrail | None = None,
+        signer: Signer | None = None,
+    ) -> None:
         self.dry_run = dry_run
+        self.containment = containment or ContainmentManager(dry_run=dry_run)
+        self.audit = audit
+        self.signer = signer
 
-    def execute(self, action: ResponseAction) -> ResponseAction:
+    def execute(
+        self,
+        action: ResponseAction,
+        *,
+        report_id: str | None = None,
+    ) -> ResponseAction:
         if action.status != ActionStatus.APPROVED:
             return action
 
-        handler = self._handlers().get(action.action_type)
-        if handler is None:
-            action.status = ActionStatus.FAILED
-            action.description = f"{action.description} (unsupported action type)"
-            return action
-
         try:
-            handler(action)
-        except Exception as exc:  # pragma: no cover - defensive
+            self.containment.apply(action, report_id=report_id)
+        except Exception as exc:  # noqa: BLE001 - failures are marked, not raised
             logger.exception("Action failed: %s", action.action_type)
             action.status = ActionStatus.FAILED
             action.rationale = f"{action.rationale or ''} ERROR: {exc}".strip()
+            self._audit("execution_failed", report_id, {"action": action.to_dict(), "error": str(exc)})
             return action
 
         action.status = ActionStatus.EXECUTED
+        self._audit("execution", report_id, {"action": action.to_dict()})
         return action
 
-    def _handlers(self) -> dict[str, callable]:
-        return {
-            "kill_process": self._kill_process,
-            "freeze_process": self._freeze_process,
-            "block_ip": self._block_ip,
-            "quarantine_file": self._quarantine_file,
-        }
-
-    # -- handlers ---------------------------------------------------------
-    def _kill_process(self, action: ResponseAction) -> None:
-        pid = int(action.target["pid"])
-        logger.warning("Killing pid %d (dry_run=%s)", pid, self.dry_run)
-        if self.dry_run:
+    def _audit(
+        self,
+        event: str,
+        report_id: str | None,
+        data: dict,
+    ) -> None:
+        if self.audit is None:
             return
-        import psutil
-
-        psutil.Process(pid).terminate()
-
-    def _freeze_process(self, action: ResponseAction) -> None:
-        pid = int(action.target["pid"])
-        logger.warning("Freezing pid %d (dry_run=%s)", pid, self.dry_run)
-        if self.dry_run:
-            return
-        import psutil
-
-        psutil.Process(pid).suspend()
-
-    def _block_ip(self, action: ResponseAction) -> None:
-        ip = action.target["ip"]
-        logger.warning("Blocking outbound to %s (dry_run=%s)", ip, self.dry_run)
-        if self.dry_run:
-            return
-        if sys.platform != "linux":
-            raise ActionExecutorError("block_ip requires Linux iptables/nftables")
-        # Firewall rule out; requires privileges. Keep rule insertion simple.
-        ret = os.system(f"iptables -A OUTPUT -d {ip} -j DROP")
-        if ret != 0:
-            raise ActionExecutorError(f"iptables rule failed (exit {ret})")
-
-    def _quarantine_file(self, action: ResponseAction) -> None:
-        path = Path(action.target["path"])
-        if not path.exists():
-            logger.warning("Quarantine target missing: %s", path)
-            return
-        quarantine_dir = Path("quarantine")
-        quarantine_dir.mkdir(parents=True, exist_ok=True)
-        dest = quarantine_dir / f"{path.name}.{int(time.time())}.quarantined"
-        logger.warning("Quarantining %s -> %s (dry_run=%s)", path, dest, self.dry_run)
-        if not self.dry_run:
-            shutil.move(str(path), str(dest))
+        self.audit.record(event, report_id=report_id, data=data, signer=self.signer)
