@@ -6,9 +6,13 @@ log_level: INFO
 data_dir: data
 
 telemetry:
-  provider: process_monitor   # process_monitor | demo_generator
+  provider: process_monitor   # process_monitor | demo_generator | auditd | tracee | bpf
   polling_interval_seconds: 2.0
   window_seconds: 60
+  audit_log_path: /var/log/audit/audit.log   # used by the auditd provider
+  ring_capacity: 10000       # bounded ring of parsed events at the source
+  max_events_per_collect: 500  # per-collect budget; excess waits for next tick
+  rate_limit_per_second: 0   # 0 = unlimited; else token-bucket cap on delivery
 
 detection:
   contamination: 0.01         # expected anomaly share for Isolation Forest

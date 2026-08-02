@@ -27,6 +27,7 @@ from backend.response.approval import ApprovalGate
 from backend.response.decision import DecisionEngine
 from backend.telemetry.base import TelemetryProvider
 from backend.telemetry.event_bus import EventBuffer
+from backend.telemetry.factory import create_provider
 
 logger = get_logger("pipeline")
 
@@ -36,9 +37,13 @@ ReportCallback = Callable[[ThreatReport], None]
 class GuardianPipeline:
     """Composition root for telemetry -> detection -> explanation -> response."""
 
-    def __init__(self, config: AppConfig, telemetry: TelemetryProvider) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        telemetry: TelemetryProvider | None = None,
+    ) -> None:
         self.config = config
-        self.telemetry = telemetry
+        self.telemetry = telemetry or create_provider(config)
         self.buffer = EventBuffer()
         self.extractor = FeatureExtractor()
         self.detector = IsolationForestDetector(

@@ -25,6 +25,10 @@ class TelemetryConfig:
     polling_interval_seconds: float = 2.0
     window_seconds: int = 60
     provider: str = "process_monitor"
+    audit_log_path: str = "/var/log/audit/audit.log"
+    ring_capacity: int = 10_000
+    max_events_per_collect: int = 500
+    rate_limit_per_second: float = 0.0
 
 
 @dataclass(slots=True)
