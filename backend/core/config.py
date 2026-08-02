@@ -50,6 +50,18 @@ class DetectionConfig:
 class ResponseConfig:
     auto_approve_destructive: bool = False
     dry_run: bool = True
+    playbook_path: str | None = None  # YAML playbook rules; None = built-in defaults
+    audit_path: str = "audit.jsonl"  # append-only, signed audit trail under data_dir
+    signing_secret: str | None = None  # HMAC secret for audit signatures (env override recommended)
+
+
+@dataclass(slots=True)
+class StorageConfig:
+    enabled: bool = True
+    path: str = "guardian.db"  # SQLite file under data_dir
+    save_events: bool = True
+    save_reports: bool = True
+    max_events: int = 100_000  # sliding-window cap for persisted events
 
 
 @dataclass(slots=True)
@@ -75,6 +87,7 @@ class AppConfig:
     detection: DetectionConfig = field(default_factory=DetectionConfig)
     explainability: ExplainabilityConfig = field(default_factory=ExplainabilityConfig)
     response: ResponseConfig = field(default_factory=ResponseConfig)
+    storage: StorageConfig = field(default_factory=StorageConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
 
     @classmethod
@@ -100,6 +113,7 @@ class AppConfig:
         det = raw.get("detection", {})
         expl = raw.get("explainability", {})
         resp = raw.get("response", {})
+        stor = raw.get("storage", {})
         dash = raw.get("dashboard", {})
         return cls(
             log_level=raw.get("log_level", "INFO"),
@@ -108,6 +122,7 @@ class AppConfig:
             detection=DetectionConfig(**{k: v for k, v in det.items()}),
             explainability=ExplainabilityConfig(**{k: v for k, v in expl.items()}),
             response=ResponseConfig(**{k: v for k, v in resp.items()}),
+            storage=StorageConfig(**{k: v for k, v in stor.items()}),
             dashboard=DashboardConfig(**{k: v for k, v in dash.items()}),
         )
 

@@ -1,0 +1,34 @@
+# GuardianOS-AI response playbook.
+#
+# Rules are evaluated top-to-bottom; an action is emitted once per matching
+# rule and de-duplicated across rules. "when.severity" filters on the
+# detection severity, "when.techniques" on MITRE technique ids present in the
+# explanation. Targets (pid, IPs, payload paths) are derived from the chain.
+
+playbook:
+  - name: critical_high_containment
+    when:
+      severity: [critical, high]
+    actions:
+      - kill_process
+      - block_ip
+      - quarantine_file
+
+  - name: medium_investigate
+    when:
+      severity: [medium]
+    actions:
+      - freeze_process
+
+  - name: command_and_control_egress
+    when:
+      techniques: [T1105, T1059.004, T1071.001]
+    actions:
+      - block_ip
+
+  - name: persistence_write
+    when:
+      techniques: [T1053.003, T1543.002]
+    actions:
+      - quarantine_file
+      - block_ip

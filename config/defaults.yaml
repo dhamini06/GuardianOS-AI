@@ -36,6 +36,16 @@ explainability:
 response:
   auto_approve_destructive: false
   dry_run: true               # MVP is always dry-run safe
+  playbook_path: null         # YAML playbook rules; null = config/playbooks.yaml built-ins
+  audit_path: audit.jsonl     # append-only, signed audit trail under data_dir
+  signing_secret: null        # HMAC secret for audit signatures; set via GUARDIAN_SIGNING_SECRET
+
+storage:
+  enabled: true
+  path: guardian.db           # SQLite file under data_dir
+  save_events: true
+  save_reports: true
+  max_events: 100000          # sliding-window cap for persisted events
 
 dashboard:
   refresh_seconds: 3.0
