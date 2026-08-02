@@ -7,7 +7,7 @@ pipeline, API layer and dashboard can be developed independently.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any
 
@@ -53,6 +53,45 @@ class ChainStep:
 
 
 @dataclass(slots=True)
+class ChainNode:
+    """A vertex in the behaviour-chain DAG: a process or an attached event."""
+
+    id: str  # stable node id, e.g. "p2100" or "e<event_id>"
+    pid: int
+    ppid: int
+    exe: str
+    kind: str  # process_created | exec | network_connect | file_write | ...
+    timestamp: float
+    description: str
+    suspicious: bool = False
+
+
+@dataclass(slots=True)
+class ChainEdge:
+    """A directed edge in the behaviour-chain DAG."""
+
+    source: str  # parent node id
+    target: str  # child node id
+    kind: str  # spawn | attach
+
+
+@dataclass(slots=True)
+class ChainDAG:
+    """Graph of the whole behaviour chain: process lineage + attached events."""
+
+    nodes: list[ChainNode] = field(default_factory=list)
+    edges: list[ChainEdge] = field(default_factory=list)
+    roots: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "nodes": [asdict(n) for n in self.nodes],
+            "edges": [asdict(e) for e in self.edges],
+            "roots": self.roots,
+        }
+
+
+@dataclass(slots=True)
 class MitreReference:
     """A MITRE ATT&CK technique mapping."""
 
@@ -60,9 +99,10 @@ class MitreReference:
     name: str
     tactic: str
     url: str
+    confidence: float = 0.0  # 0..1, strength of the observed evidence
 
     def __str__(self) -> str:
-        return f"{self.technique_id} ({self.name} / {self.tactic})"
+        return f"{self.technique_id} ({self.name} / {self.tactic}, {self.confidence:.0%})"
 
 
 @dataclass(slots=True)
@@ -101,6 +141,7 @@ class Explanation:
     reasons: list[str] = field(default_factory=list)
     chain: list[ChainStep] = field(default_factory=list)
     mitre: list[MitreReference] = field(default_factory=list)
+    dag: ChainDAG | None = None
     confidence: float = 0.0
     severity: Severity = Severity.INFO
 
@@ -153,8 +194,6 @@ class ThreatReport:
     actions: list[ResponseAction] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        from dataclasses import asdict
-
         return {
             "report_id": self.report_id,
             "timestamp": self.timestamp,
@@ -164,6 +203,7 @@ class ThreatReport:
                 "reasons": self.explanation.reasons,
                 "chain": [asdict(s) for s in self.explanation.chain],
                 "mitre": [asdict(m) for m in self.explanation.mitre],
+                "dag": self.explanation.dag.to_dict() if self.explanation.dag else None,
                 "confidence": self.explanation.confidence,
                 "severity": self.explanation.severity.value,
             },

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import defaultdict
 
 import psutil
 from rich.console import Console
@@ -16,6 +17,7 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
+from backend.core.analysis import ChainDAG
 from backend.core.logging import get_logger
 from backend.pipeline import GuardianPipeline
 
@@ -124,9 +126,12 @@ class CliDashboard:
         if report.explanation.mitre:
             lines.append("")
             lines += [
-                f"  [cyan]MITRE {m.technique_id} {m.name}[/] ({m.tactic})"
+                f"  [cyan]MITRE {m.technique_id} {m.name}[/] ({m.tactic}, {m.confidence:.0%})"
                 for m in report.explanation.mitre
             ]
+        lines.append("")
+        lines.append("Process DAG:")
+        lines += [f"  {line}" for line in self._chain_dag_text(report.explanation.dag)]
         if report.actions:
             lines.append("")
             lines.append("[bold]Recommended response:[/]")
@@ -136,6 +141,43 @@ class CliDashboard:
             "\n".join(lines),
             title=f"AI Explanation  (report {report.report_id}, confidence {report.explanation.confidence:.0%})",
         )
+
+    def _chain_dag_text(self, dag: ChainDAG | None) -> list[str]:
+        """Render the behaviour-chain DAG as an ASCII process tree."""
+        if not dag or not dag.nodes:
+            return ["[dim]No behaviour-chain DAG available.[/]"]
+        by_id = {n.id: n for n in dag.nodes}
+        spawn: dict[str, list[str]] = defaultdict(list)
+        attach: dict[str, list[str]] = defaultdict(list)
+        for edge in dag.edges:
+            (spawn if edge.kind == "spawn" else attach)[edge.source].append(edge.target)
+
+        def node_label(node_id: str) -> str:
+            node = by_id[node_id]
+            exe = node.exe.split("/")[-1].split("\\")[-1] or node.exe
+            text = f"{exe} [dim](pid {node.pid})[/]"
+            return f"[red]{text}[/]" if node.suspicious else text
+
+        out: list[str] = []
+
+        def walk(node_id: str, prefix: str, last: bool) -> None:
+            out.append(f"{prefix}{'└─ ' if last else '├─ '}{node_label(node_id)}")
+            child_prefix = prefix + ("   " if last else "│  ")
+            items = spawn.get(node_id, []) + attach.get(node_id, [])
+            for index, child_id in enumerate(items):
+                child_last = index == len(items) - 1
+                glyph = "└─ " if child_last else "├─ "
+                if child_id in by_id and child_id not in spawn:
+                    leaf = by_id[child_id]
+                    text = leaf.description
+                    out.append(f"{child_prefix}{glyph}{'[red]' if leaf.suspicious else ''}{text}{'[/]' if leaf.suspicious else ''}")
+                else:
+                    walk(child_id, child_prefix, child_last)
+
+        roots = dag.roots or [n.id for n in dag.nodes if n.kind in ("process_created", "exec")]
+        for index, root in enumerate(roots):
+            walk(root, "", index == len(roots) - 1)
+        return out
 
     def _health_panel(self) -> Panel:
         cpu = psutil.cpu_percent(interval=None)
