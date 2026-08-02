@@ -1,0 +1,27 @@
+# GuardianOS-AI default configuration.
+# Override via a user file or dotted command-line overrides, e.g.
+#   {"telemetry.window_seconds": 120}
+
+log_level: INFO
+data_dir: data
+
+telemetry:
+  provider: process_monitor   # process_monitor | demo_generator
+  polling_interval_seconds: 2.0
+  window_seconds: 60
+
+detection:
+  contamination: 0.01         # expected anomaly share for Isolation Forest
+  n_estimators: 200
+  max_samples: 256
+  normalise_threshold: 0.75   # score above which a sample is "normal" scale max
+  flagged_threshold: 0.60     # normalised anomaly score to be considered a threat
+  min_baseline_samples: 25    # feature vectors required before baseline fits
+  model_path: null            # persisted model path; null = in-memory baseline
+
+response:
+  auto_approve_destructive: false
+  dry_run: true               # MVP is always dry-run safe
+
+dashboard:
+  refresh_seconds: 3.0

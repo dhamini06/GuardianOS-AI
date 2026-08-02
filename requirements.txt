@@ -1,0 +1,17 @@
+# GuardianOS-AI runtime requirements
+
+# AI / ML
+numpy>=1.26
+scikit-learn>=1.4
+
+# System telemetry
+psutil>=5.9
+
+# Configuration
+PyYAML>=6.0
+
+# Dashboard / terminal UX
+rich>=13.7
+
+# Tests
+pytest>=8.0
