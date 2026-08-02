@@ -18,6 +18,9 @@ detection:
   flagged_threshold: 0.60     # normalised anomaly score to be considered a threat
   min_baseline_samples: 25    # feature vectors required before baseline fits
   model_path: null            # persisted model path; null = in-memory baseline
+  autoload: true              # load a persisted model on boot if model_path exists
+  refit_interval_windows: 10  # refit the baseline every N scored windows
+  baseline_max_samples: 400   # sliding-window cap for the online baseline
 
 response:
   auto_approve_destructive: false

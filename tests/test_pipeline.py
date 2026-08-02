@@ -1,4 +1,4 @@
-"""End-to-end pipeline tests (the MVP vertical slice)."""
+"""End-to-end pipeline tests (the MVP vertical slice + M2 lifecycle)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from backend.pipeline import GuardianPipeline
 from backend.telemetry.demo_generator import DemoGenerator
 
 
-def _run_demo(normal_runs: int = 40) -> GuardianPipeline:
-    config = AppConfig.load()
+def _run_demo(normal_runs: int = 40, config: AppConfig | None = None) -> GuardianPipeline:
+    config = config or AppConfig.load()
     generator = DemoGenerator("normal", speed=1e6, normal_runs=normal_runs)
     pipeline = GuardianPipeline(config, telemetry=generator)
     pipeline.start()
@@ -58,3 +58,99 @@ def test_execute_action_end_to_end(app_config):
     updated = pipeline.execute_action(report.report_id, 0)
     assert updated is report
     assert before != updated.actions[0].status
+
+
+def test_complete_learning_persists_model(tmp_path):
+    config = AppConfig.load(overrides={"detection.model_path": str(tmp_path / "model.joblib")})
+    generator = DemoGenerator("normal", speed=1e6, normal_runs=10)
+    pipeline = GuardianPipeline(config, telemetry=generator)
+    pipeline.start()
+    while not generator.exhausted:
+        pipeline.ingest_tick()
+    pipeline.complete_learning()
+    pipeline.stop()
+    from pathlib import Path
+
+    assert Path(config.detection.model_path).exists()
+
+
+def test_autoload_skips_learning(tmp_path):
+    model_path = str(tmp_path / "model.joblib")
+    train = AppConfig.load(overrides={"detection.model_path": model_path})
+    generator = DemoGenerator("normal", speed=1e6, normal_runs=10)
+    pipeline = GuardianPipeline(train, telemetry=generator)
+    pipeline.start()
+    while not generator.exhausted:
+        pipeline.ingest_tick()
+    pipeline.complete_learning()
+    pipeline.stop()
+
+    boot = AppConfig.load(overrides={"detection.model_path": model_path})
+    generator2 = DemoGenerator("normal", speed=1e6)
+    restarted = GuardianPipeline(boot, telemetry=generator2)
+    restarted.start()
+    assert not restarted.learning
+    assert restarted.detector.is_trained
+    assert restarted.is_ready_to_detect()
+    restarted.stop()
+
+
+def test_sliding_baseline_respects_cap(app_config):
+    config = AppConfig.load(overrides={"detection.baseline_max_samples": 8})
+    generator = DemoGenerator("normal", speed=1e6, normal_runs=40)
+    pipeline = GuardianPipeline(config, telemetry=generator)
+    pipeline.start()
+    while not generator.exhausted:
+        pipeline.ingest_tick()
+    pipeline.complete_learning()
+    assert len(pipeline._baseline) <= 8
+    pipeline.stop()
+
+
+def test_refit_rebuilds_detector_and_clears_cache(app_config):
+    pipeline = _run_demo()
+    pipeline._refit_detector()
+    assert pipeline.detector.is_trained
+    assert pipeline._chain_cache == {}
+
+
+def test_maybe_refit_respects_interval(app_config):
+    config = AppConfig.load(overrides={"detection.refit_interval_windows": 3})
+    generator = DemoGenerator("normal", speed=1e6, normal_runs=40)
+    pipeline = GuardianPipeline(config, telemetry=generator)
+    pipeline.start()
+    while not generator.exhausted:
+        pipeline.ingest_tick()
+    pipeline.complete_learning()
+    pipeline._windows_since_refit = 2
+    pipeline._maybe_refit()
+    assert pipeline._windows_since_refit == 0
+    assert pipeline.detector.is_trained
+    pipeline.stop()
+
+
+def test_label_benign_adds_chain_to_baseline(tmp_path):
+    config = AppConfig.load(overrides={"data_dir": str(tmp_path)})
+    pipeline = _run_demo(config=config)
+    report = pipeline.reports[0]
+    before = len(pipeline._baseline)
+    updated = pipeline.label_chain(report.report_id, "benign")
+    assert updated is report
+    assert pipeline.feedback.benign_keys
+    assert len(pipeline._baseline) >= before
+
+
+def test_label_malicious_excludes_chain(tmp_path):
+    config = AppConfig.load(overrides={"data_dir": str(tmp_path)})
+    pipeline = _run_demo(config=config)
+    report = pipeline.reports[0]
+    chain_key = report.detection.context["chain_key"]
+    updated = pipeline.label_chain(report.report_id, "malicious")
+    assert updated is report
+    assert all(v.chain_key != chain_key for v in pipeline._baseline)
+
+
+def test_label_unknown_report_returns_none(tmp_path):
+    config = AppConfig.load(overrides={"data_dir": str(tmp_path)})
+    pipeline = _run_demo(config=config)
+    assert pipeline.label_chain("nope", "benign") is None

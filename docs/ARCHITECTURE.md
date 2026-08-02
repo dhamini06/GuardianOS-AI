@@ -80,6 +80,24 @@ Hierarchical: `config/defaults.yaml` <- user file <- dotted overrides
 (e.g. `{"telemetry.window_seconds": 120}`). Exposed as `AppConfig`
 (`backend/core/config.py`).
 
+## 4a. Baseline lifecycle (M2)
+
+The unsupervised baseline is a living model, not a one-shot fit:
+
+- **Persistence**: trained detectors are saved/loaded via joblib; the payload
+  carries `FEATURE_SCHEMA_VERSION` and mismatches are rejected on load.
+  `detection.model_path` enables auto-load on boot (`start()`) and auto-save
+  after learning/refits.
+- **Online learning**: every unscored window, non-flagged chains fold into a
+  sliding baseline capped by `baseline_max_samples`; every
+  `refit_interval_windows` the detector is refit and the per-chain score cache
+  is invalidated.
+- **Feedback loop** (`backend/feedback/`): analyst verdicts
+  (`label_chain(report_id, benign|malicious)`) are persisted in a JSONL ledger
+  under `<data_dir>/feedback.jsonl`; `benign` folds the chain into normality,
+  `malicious` excludes it from the training set, and the detector refits
+  immediately. This is the raw material for the future supervised classifier.
+
 ## 5. Extensibility points
 
 - **New telemetry source**: implement `TelemetryProvider` (Protocol) and

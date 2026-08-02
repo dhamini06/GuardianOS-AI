@@ -183,13 +183,17 @@ class ThreatReport:
 
 ```python
 pipeline = GuardianPipeline(config, telemetry=provider)
-pipeline.start()
-pipeline.ingest_tick()              # learning phase
-pipeline.complete_learning()
-pipeline.analyze_window(on_report=...)   # detection phase
+pipeline.start()                         # auto-loads a persisted model if configured
+pipeline.ingest_tick()                   # learning phase
+pipeline.complete_learning()             # fits + persists the baseline model
+pipeline.analyze_window(on_report=...)   # detection phase (periodically refits)
 pipeline.execute_action(report_id, action_index)   # human approves an action
+pipeline.label_chain(report_id, "benign" | "malicious", note=...)  # feedback loop
 pipeline.stop()
 ```
+
+The pipeline also exposes `is_ready_to_detect()`, `learning_step()`, and
+`feedback` (a `FeedbackLedger` persisted under `<data_dir>/feedback.jsonl`).
 
 ## 9. Configuration contract
 
@@ -202,5 +206,9 @@ pipeline.stop()
 | detection | contamination | 0.01 | expected anomaly share |
 | detection | flagged_threshold | 0.60 | anomaly score threshold |
 | detection | min_baseline_samples | 25 | vectors needed before fit |
+| detection | model_path | `null` | persisted model location (auto-load/save) |
+| detection | autoload | true | load persisted model on boot if present |
+| detection | refit_interval_windows | 10 | online refit cadence |
+| detection | baseline_max_samples | 400 | sliding baseline cap |
 | response | dry_run | true | never perform, only log |
 | response | auto_approve_destructive | false | require human approval |

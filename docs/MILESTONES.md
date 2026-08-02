@@ -30,13 +30,20 @@ Kernel Event -> Behaviour Features -> Anomaly Detection -> Explanation
   scripted attack chain as one critical threat.
 - 44 tests green.
 
-## Milestone 2 - Baseline persistence and lifecycle
+## Milestone 2 - Baseline persistence and lifecycle (DONE)
 
 - Persist/load trained detector (`detector.save/load`) and auto-load on boot.
-- Online learning: periodically refit the baseline from a sliding window of
-  normal windows; version the feature schema.
-- Analysts feedback loop: "benign / malicious" labels reweight or retrain the
-  baseline and are recorded for the supervised classifier.
+  Models carry a `FEATURE_SCHEMA_VERSION`; mismatched schemas are rejected on
+  load so stale models can never be silently mis-used.
+- Online learning: the detector is periodically refit from a sliding window of
+  normal windows (capped by `baseline_max_samples`); non-flagged chains fold
+  into the baseline during detection, and a refit every
+  `refit_interval_windows` invalidates the per-chain score cache.
+- Analysts feedback loop: `label_chain(report, benign|malicious)` records
+  verdicts in a persistent JSONL ledger and reweights the baseline -
+  `benign` folds the chain back into normality, `malicious` excludes it. The
+  detector is refit immediately after a verdict so the model converges on
+  analyst ground truth.
 
 ## Milestone 3 - Kernel-level telemetry (Linux)
 
