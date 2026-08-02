@@ -7,13 +7,17 @@ from backend.explainability.attribution import (
     narrative_for,
     reasons_from_contributions,
 )
-from backend.explainability.chain import build_chain
+from backend.explainability.chain import build_chain, build_dag
+from backend.explainability.llm import LlmNarrativeGenerator
 from backend.explainability.mitre import map_techniques
 from backend.features.extractor import ProcessFeatures
 
 
 class RuleBasedExplainer:
-    """MVP explainer combining feature attribution, chain and MITRE mapping."""
+    """Combines attribution, chain DAG, MITRE mapping and optional LLM prose."""
+
+    def __init__(self, llm: LlmNarrativeGenerator | None = None) -> None:
+        self._llm = llm
 
     def explain(self, vector: ProcessFeatures, result: DetectionResult) -> Explanation:
         reasons, strong_count = reasons_from_contributions(
@@ -29,11 +33,18 @@ class RuleBasedExplainer:
                 "but no single feature dominates; combined behaviour is unusual."
             )
 
-        return Explanation(
+        explanation = Explanation(
             summary=summary,
             reasons=reasons,
             chain=chain,
             mitre=techniques,
+            dag=build_dag(vector.related_events),
             confidence=result.confidence,
             severity=result.severity,
         )
+
+        if self._llm is not None:
+            generated = self._llm.summarize(explanation)
+            if generated:
+                explanation.summary = generated
+        return explanation

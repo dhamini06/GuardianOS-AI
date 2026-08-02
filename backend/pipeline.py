@@ -19,6 +19,7 @@ from backend.core.events import KernelEvent
 from backend.core.logging import get_logger
 from backend.detection.isolation_forest import IsolationForestDetector
 from backend.explainability.explainer import RuleBasedExplainer
+from backend.explainability.llm import LlmNarrativeGenerator
 from backend.features.extractor import FeatureExtractor, ProcessFeatures
 from backend.feedback.learning import reweight_baseline
 from backend.feedback.ledger import BENIGN, FeedbackLedger
@@ -51,8 +52,16 @@ class GuardianPipeline:
             n_estimators=config.detection.n_estimators,
             max_samples=config.detection.max_samples,
             flagged_threshold=config.detection.flagged_threshold,
+            background_samples=config.detection.attribution_background_samples,
         )
-        self.explainer = RuleBasedExplainer()
+        llm: LlmNarrativeGenerator | None = None
+        if config.explainability.narrative_provider == "llm":
+            llm = LlmNarrativeGenerator(
+                endpoint=config.explainability.llm_endpoint,
+                model=config.explainability.llm_model,
+                timeout=config.explainability.llm_timeout_seconds,
+            )
+        self.explainer = RuleBasedExplainer(llm=llm)
         self.decision = DecisionEngine()
         self.gate = ApprovalGate(
             auto_approve_destructive=config.response.auto_approve_destructive

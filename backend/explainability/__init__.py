@@ -7,5 +7,13 @@ like, and which MITRE ATT&CK techniques it resembles.
 
 from backend.explainability.base import Explainer, ExplainerError
 from backend.explainability.explainer import RuleBasedExplainer
+from backend.explainability.llm import LlmNarrativeGenerator
+from backend.explainability.mitre import map_techniques
 
-__all__ = ["Explainer", "ExplainerError", "RuleBasedExplainer"]
+__all__ = [
+    "Explainer",
+    "ExplainerError",
+    "RuleBasedExplainer",
+    "LlmNarrativeGenerator",
+    "map_techniques",
+]
