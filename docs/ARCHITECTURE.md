@@ -98,6 +98,27 @@ The unsupervised baseline is a living model, not a one-shot fit:
   `malicious` excludes it from the training set, and the detector refits
   immediately. This is the raw material for the future supervised classifier.
 
+## 4b. Explainability (M4)
+
+Every detection ships with four layers of evidence:
+
+- **SHAP-style attribution** (`feature_contributions`): the detector stores a
+  bounded reservoir of baseline rows alongside the model and computes each
+  feature's marginal contribution with the Strumbej-Kononenko sampling
+  estimator (swapping the feature against sampled baseline rows in both
+  directions). Deterministic, and attribution is only non-zero where the ML
+  model itself deviates - hard-signal anomalies are explained by the signal
+  rules instead, so attribution is always honest about its source.
+- **Behaviour-chain DAG** (`build_dag`): process vertices + `spawn`/`attach`
+  edges, serialised in the report and rendered as an ASCII process tree in the
+  CLI dashboard.
+- **MITRE mapping with confidence** (`map_techniques`): every technique carries
+  `0..1` confidence from the strength of its evidence; persistence techniques
+  (cron, systemd) are mapped from file-write targets.
+- **LLM narrative** (optional): `LlmNarrativeGenerator` queries a local
+  Ollama-compatible endpoint for analyst prose and degrades gracefully to the
+  rule-based narrative on any failure (`explainability.narrative_provider`).
+
 ## 5. Extensibility points
 
 - **New telemetry source**: implement `TelemetryProvider` (Protocol) and

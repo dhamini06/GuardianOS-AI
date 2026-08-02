@@ -122,10 +122,45 @@ class Explanation:
     summary: str
     reasons: list[str]            # why this is anomalous
     chain: list[ChainStep]        # ordered behaviour chain with suspicious flags
-    mitre: list[MitreReference]   # technique_id, name, tactic, url
+    mitre: list[MitreReference]   # technique_id, name, tactic, url, confidence
+    dag: ChainDAG | None          # behaviour-chain DAG (M4)
     confidence: float
     severity: Severity
 ```
+
+## 5a. Behaviour-chain DAG (Layer 4, M4)
+
+`backend/explainability/chain.py` -> `build_dag(events)` -> `ChainDAG`
+
+```python
+@dataclass(slots=True)
+class ChainNode:
+    id: str; pid: int; ppid: int; exe: str
+    kind: str; timestamp: float; description: str; suspicious: bool
+
+@dataclass(slots=True)
+class ChainEdge:
+    source: str; target: str; kind: str   # "spawn" | "attach"
+
+@dataclass(slots=True)
+class ChainDAG:
+    nodes: list[ChainNode]
+    edges: list[ChainEdge]
+    roots: list[str]
+```
+
+Process vertices are linked by `spawn` edges; connections/writes/escalations
+are leaf nodes `attach`ed to the process that performed them. The DAG is
+serialised into `ThreatReport.to_dict()["explanation"]["dag"]`.
+
+## 5b. SHAP-style attribution (Layer 3, M4)
+
+`IsolationForestDetector.feature_contributions(vector)` returns
+`dict[feature, float]` from the Strumbej-Kononenko sampling estimator against
+a persisted reservoir of baseline rows. `MitreReference` gained a
+`confidence: float` (0..1) populated by `map_techniques`. Optional analyst
+prose comes from `backend/explainability/llm.py` (`LlmNarrativeGenerator`,
+Ollama-compatible endpoint, graceful fallback).
 
 ## 6. Response layer (Layer 5)
 
@@ -217,6 +252,11 @@ The pipeline also exposes `is_ready_to_detect()`, `learning_step()`, and
 | detection | contamination | 0.01 | expected anomaly share |
 | detection | flagged_threshold | 0.60 | anomaly score threshold |
 | detection | min_baseline_samples | 25 | vectors needed before fit |
+| detection | attribution_background_samples | 64 | SHAP-style attribution budget |
+| explainability | narrative_provider | `rules` | `rules` or `llm` (local model) |
+| explainability | llm_endpoint | `http://127.0.0.1:11434` | Ollama-compatible endpoint |
+| explainability | llm_model | `llama3.2:1b` | local model name |
+| explainability | llm_timeout_seconds | 10.0 | LLM request timeout |
 | detection | model_path | `null` | persisted model location (auto-load/save) |
 | detection | autoload | true | load persisted model on boot if present |
 | detection | refit_interval_windows | 10 | online refit cadence |

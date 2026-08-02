@@ -59,12 +59,25 @@ Kernel Event -> Behaviour Features -> Anomaly Detection -> Explanation
 - Provider registry: `create_provider(config)` maps `telemetry.provider`;
   kernel sources raise a clear error off-Linux.
 
-## Milestone 4 - Deeper explainability
+## Milestone 4 - Deeper explainability (DONE)
 
-- SHAP-style feature attribution for the Isolation Forest.
-- Execution-chain visualisation (DAG) in the dashboard.
-- Expanded MITRE mapping with confidence per technique.
-- Optional LLM narrative generation (offline/local models) for analyst prose.
+- SHAP-style feature attribution for the Isolation Forest: the detector keeps a
+  bounded reservoir of baseline rows (persisted with the model) and attributes
+  each feature with the Strumbej-Kononenko sampling estimator - the average
+  marginal contribution of swapping that feature against baseline samples,
+  measured in both directions. Deterministic and cheaper than full Shapley
+  values; models trained before M4 fall back to a single median probe.
+- Execution-chain DAG: `build_dag` turns a chain into a graph (process
+  vertices, `spawn` edges for lineage, `attach` edges for connections/writes/
+  escalations) rendered as an ASCII process tree in the CLI dashboard and
+  serialised in `ThreatReport.to_dict()`.
+- Expanded MITRE mapping with per-technique confidence (`MitreReference.
+  confidence`): confidence grows with the strength of the evidence, and new
+  persistence techniques were added (`T1053.003` Cron, `T1543.002` Systemd
+  service) mapped from file writes into those paths.
+- Optional LLM narrative generation: `LlmNarrativeGenerator` talks to a local
+  Ollama-compatible endpoint (`/api/generate`); failures degrade to the
+  rule-based summary. Enabled via `explainability.narrative_provider: llm`.
 
 ## Milestone 5 - Production-grade response
 
