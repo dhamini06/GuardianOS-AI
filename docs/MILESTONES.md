@@ -79,12 +79,31 @@ Kernel Event -> Behaviour Features -> Anomaly Detection -> Explanation
   Ollama-compatible endpoint (`/api/generate`); failures degrade to the
   rule-based summary. Enabled via `explainability.narrative_provider: llm`.
 
-## Milestone 5 - Production-grade response
+## Milestone 5 - Production-grade response (DONE)
 
-- Playbook engine: configurable responses per severity/technique.
-- Containment (cgroup/network namespaces, `nftables` sets) with rollback.
-- Full audit trail of every approved action; signed approvals.
-- On-host persistence of events and reports (SQLite/Postgres schema).
+- Playbook engine: declarative YAML rules (`config/playbooks.yaml`) keyed by
+  severity and/or MITRE technique expand into concrete remediation actions
+  (kill, freeze, block IP, quarantine) with targets derived from the chain.
+  `DecisionEngine` is driven entirely by the playbook (built-in default rules
+  preserve the pre-M5 severity behaviour when no file is configured), and
+  actions are de-duplicated across rules.
+- Containment with rollback: `ContainmentManager` performs the platform effect
+  and records a reversible handle - `nftables` set add/delete for IP blocking,
+  SIGSTOP/CONT for freezing, move-to-quarantine for files. Killing is
+  deliberately non-reversible. `rollback(report_id)` undoes everything applied
+  for a report, so a response can be reversed after the fact.
+- Signed, append-only audit trail: every approval, execution and rollback is
+  written to a hash-chained JSONL file. Each record carries an HMAC-SHA256
+  signature (when `response.signing_secret` / `GUARDIAN_SIGNING_SECRET` is
+  set) plus the digest of the previous record, so tampering with any record
+  breaks the chain and fails `verify_all()`.
+- On-host SQLite persistence: `SqliteStorage` writes every ingested event and
+  every threat report to `data/guardian.db` (sliding cap on events); the
+  pipeline and dashboard read/write it as the durable record.
+- Detection performance fix: SHAP-style attribution is now computed lazily for
+  flagged chains only, so normal windows score in milliseconds instead of
+  tens of seconds (semantics unchanged - attribution is explainability for
+  alerts).
 
 ## Milestone 6 - Web dashboard and API
 

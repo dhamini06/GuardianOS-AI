@@ -27,7 +27,7 @@ data flow of the MVP, and how each layer will evolve.
 | 2. Feature Engineering | `backend/features` | Raw events -> behaviour vectors | `FeatureExtractor` (per process chain per window) | behaviour graphs, session profiling |
 | 3. AI Detection | `backend/detection` | Learn normal, flag deviation | `IsolationForestDetector` + hybrid signal scoring | autoencoder, supervised classifier, graph anomaly |
 | 4. Explainability | `backend/explainability` | Why + chain + MITRE + narrative | `RuleBasedExplainer` | SHAP-style attribution, LLM narrative |
-| 5. Response | `backend/response` | Recommend / perform remediation | `DecisionEngine` + `ApprovalGate` + `ActionExecutor` | playbooks, containment policies |
+| 5. Response | `backend/response` | Recommend / perform remediation | `PlaybookEngine` -> `DecisionEngine` + `ApprovalGate` + `ContainmentManager` + `ActionExecutor` | policy engine, quarantine, more action types |
 | 6. Dashboard | `backend/dashboard` | Live operator view | `CliDashboard` (rich) | web dashboard, REST/WS API |
 
 ## 3. Data flow (MVP vertical slice)
@@ -119,6 +119,30 @@ Every detection ships with four layers of evidence:
   Ollama-compatible endpoint for analyst prose and degrades gracefully to the
   rule-based narrative on any failure (`explainability.narrative_provider`).
 
+## 4c. Production response (M5)
+
+The response layer is driven by policy and stays accountable:
+
+- **Playbook engine** (`backend/response/playbook.py`): declarative YAML rules
+  keyed by severity and/or MITRE technique expand into remediation actions
+  with targets derived from the chain. `DecisionEngine` consults the playbook;
+  de-duplication means each target/action pair is recommended at most once.
+- **Containment with rollback** (`backend/response/containment.py`): the
+  `ContainmentManager` performs the effect (nftables set add/delete, SIGSTOP/
+  CONT, quarantine move) and records a reversible handle per executed action.
+  `rollback_actions(report_id)` undoes a response; kills are non-reversible.
+  Effects run through a swappable `SystemRunner` so tests are hermetic.
+- **Signed, append-only audit trail** (`backend/response/audit.py`): approvals,
+  executions and rollbacks are appended to a hash-chained JSONL file; records
+  are HMAC-SHA256 signed when `response.signing_secret` /
+  `GUARDIAN_SIGNING_SECRET` is set, and `verify_all()` detects tampering.
+- **On-host persistence** (`backend/storage/sqlite.py`): every ingested event
+  and every threat report is written to `<data_dir>/guardian.db`, giving the
+  agent a durable, queryable record of observations and decisions.
+- **Lazy attribution**: SHAP-style `feature_contributions` is computed only for
+  flagged chains, so scoring normal windows is cheap while alert explainability
+  is unchanged.
+
 ## 5. Extensibility points
 
 - **New telemetry source**: implement `TelemetryProvider` (Protocol) and
@@ -128,15 +152,15 @@ Every detection ships with four layers of evidence:
   primitives (`backend/telemetry/ring.py`). No other layer changes.
 - **New detector**: implement `AnomalyDetector` (Protocol). Reuse
   `compute_detection_result` for scoring semantics.
-- **New response action**: add a builder + executor handler. Approval rules
-  remain centralised in `ApprovalGate`.
+- **New response action**: add a builder + executor handler and a playbook
+  rule. Approval rules remain centralised in `ApprovalGate`.
 - **New dashboard**: consume `ThreatReport.to_dict()` and the `EventBuffer`.
 
 ## 6. Runtime layout
 
 ```
-data/        persisted models, quarantined artifacts
+data/        persisted models, SQLite store (guardian.db), audit trail, feedback ledger
 logs/        structured logs (guardianos.log)
 quarantine/  quarantined executables (when approved)
-config/      YAML configuration
+config/      YAML configuration + playbook rules
 ```

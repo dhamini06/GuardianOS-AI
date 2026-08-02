@@ -201,6 +201,41 @@ ActionExecutor.execute: only APPROVED actions run
 EXECUTED (dry-run logs the intent) | FAILED
 ```
 
+### 6a. Response playbook (Layer 5, M5)
+
+`backend/response/playbook.py` -> `PlaybookEngine` replaces hard-coded severity
+branches with declarative rules:
+
+```python
+engine = PlaybookEngine.load()               # config/playbooks.yaml (or built-in defaults)
+actions = engine.decide(vector, result, explanation)   # de-duplicated ResponseActions
+```
+
+Rules match on `when.severity` and/or `when.techniques` (MITRE ids present in
+the explanation) and expand to `actions` whose targets (pid, IPs, payload
+paths) are derived from the chain. `DecisionEngine` is driven by the playbook.
+
+### 6b. Containment with rollback (Layer 5, M5)
+
+`backend/response/containment.py` -> `ContainmentManager`
+
+```python
+entry = manager.apply(action, report_id=...)   # performs effect + records undo
+manager.rollback(entry)                        # undoes one operation
+manager.rollback_all(report_id=...)            # undo everything for a report
+```
+
+Freeze/block/quarantine record a reversible handle (`ContainmentEntry`);
+kill is non-reversible. Effects go through a `SystemRunner` (subprocess/psutil/
+shutil) so tests inject a fake runner.
+
+### 6c. Signed audit trail (Layer 5, M5)
+
+`backend/response/audit.py` -> `AuditTrail` + `Signer`. Every approval,
+execution and rollback is appended to a hash-chained JSONL file; with
+`response.signing_secret` / `GUARDIAN_SIGNING_SECRET` set, each record carries
+an HMAC-SHA256 signature. `verify_all(signer)` detects tampering.
+
 ## 7. Threat report (dashboard/API input)
 
 `backend/core/analysis.py` -> `ThreatReport`
@@ -230,12 +265,16 @@ pipeline.ingest_tick()                   # learning phase
 pipeline.complete_learning()             # fits + persists the baseline model
 pipeline.analyze_window(on_report=...)   # detection phase (periodically refits)
 pipeline.execute_action(report_id, action_index)   # human approves an action
+pipeline.rollback_actions(report_id)               # undo all executed containment (M5)
 pipeline.label_chain(report_id, "benign" | "malicious", note=...)  # feedback loop
 pipeline.stop()
 ```
 
 The pipeline also exposes `is_ready_to_detect()`, `learning_step()`, and
 `feedback` (a `FeedbackLedger` persisted under `<data_dir>/feedback.jsonl`).
+M5 additions: `playbook`, `signer`/`audit` (signed trail under
+`<data_dir>/audit.jsonl`), `containment` (reversible responses) and `storage`
+(SQLite under `<data_dir>/guardian.db`).
 
 ## 9. Configuration contract
 
@@ -263,3 +302,11 @@ The pipeline also exposes `is_ready_to_detect()`, `learning_step()`, and
 | detection | baseline_max_samples | 400 | sliding baseline cap |
 | response | dry_run | true | never perform, only log |
 | response | auto_approve_destructive | false | require human approval |
+| response | playbook_path | `null` | YAML playbook file (null = built-in defaults) |
+| response | audit_path | `audit.jsonl` | signed audit trail under data_dir |
+| response | signing_secret | `null` | HMAC secret (env `GUARDIAN_SIGNING_SECRET`) |
+| storage | enabled | true | persist events/reports to SQLite |
+| storage | path | `guardian.db` | SQLite file under data_dir |
+| storage | save_events | true | write telemetry events |
+| storage | save_reports | true | write threat reports |
+| storage | max_events | 100000 | sliding cap for persisted events |

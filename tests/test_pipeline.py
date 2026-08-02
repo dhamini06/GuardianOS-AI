@@ -154,3 +154,46 @@ def test_label_unknown_report_returns_none(tmp_path):
     config = AppConfig.load(overrides={"data_dir": str(tmp_path)})
     pipeline = _run_demo(config=config)
     assert pipeline.label_chain("nope", "benign") is None
+
+
+def test_pipeline_persists_events_and_reports_to_sqlite(tmp_path):
+    from backend.storage.sqlite import SqliteStorage
+
+    config = AppConfig.load(overrides={"data_dir": str(tmp_path)})
+    pipeline = _run_demo(config=config)
+    # _run_demo() calls stop(), which closes the connection and clears the
+    # attribute; the durable record is the SQLite file itself.
+    storage = SqliteStorage(tmp_path / "guardian.db")
+    counts = storage.counts()
+    assert counts["reports"] >= 1
+    assert counts["events"] >= 1
+    assert storage.recent_reports()[0]["report_id"] == pipeline.reports[0].report_id
+    storage.close()
+
+
+def test_execute_action_records_containment_and_rollback(tmp_path):
+    config = AppConfig.load(overrides={"data_dir": str(tmp_path)})
+    pipeline = _run_demo(config=config)
+    report = pipeline.reports[0]
+    # action 0 is kill_process (not reversible); 1 is block_ip (reversible).
+    pipeline.execute_action(report.report_id, 1)
+    assert pipeline.containment.entries
+    reversed_count = pipeline.rollback_actions(report.report_id)
+    assert reversed_count == 1
+
+
+def test_response_writes_signed_audit_trail(tmp_path):
+    config = AppConfig.load(
+        overrides={
+            "data_dir": str(tmp_path),
+            "response.signing_secret": "test-secret",
+        }
+    )
+    pipeline = _run_demo(config=config)
+    report = pipeline.reports[0]
+    pipeline.execute_action(report.report_id, 0)
+    assert pipeline.audit is not None
+    ok, problems = pipeline.audit.verify_all(signer=pipeline.signer)
+    assert ok, problems
+    events = {e["event"] for e in pipeline.audit.entries()}
+    assert "approved" in events and "execution" in events
