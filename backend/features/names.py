@@ -5,6 +5,10 @@ training, and explainability. Changing this list invalidates persisted
 models, so it is versioned explicitly.
 """
 
+# Bump when FEATURE_NAMES changes; persisted models with an older schema
+# are rejected on load and must be retrained.
+FEATURE_SCHEMA_VERSION = 1
+
 FEATURE_NAMES: list[str] = [
     "num_children",
     "exec_frequency",

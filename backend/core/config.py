@@ -36,6 +36,9 @@ class DetectionConfig:
     flagged_threshold: float = 0.6
     min_baseline_samples: int = 25
     model_path: str | None = None
+    autoload: bool = True
+    refit_interval_windows: int = 10
+    baseline_max_samples: int = 400
 
 
 @dataclass(slots=True)

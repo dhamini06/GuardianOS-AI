@@ -25,7 +25,7 @@ from backend.core.logging import get_logger
 from backend.detection.base import DetectorError
 from backend.detection.scoring import compute_detection_result
 from backend.features.extractor import ProcessFeatures
-from backend.features.names import FEATURE_NAMES
+from backend.features.names import FEATURE_NAMES, FEATURE_SCHEMA_VERSION
 
 logger = get_logger("detection.isolation_forest")
 
@@ -126,6 +126,7 @@ class IsolationForestDetector:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = {
+            "schema_version": FEATURE_SCHEMA_VERSION,
             "model": self._model,
             "raw_min": self._raw_min,
             "raw_max": self._raw_max,
@@ -138,6 +139,12 @@ class IsolationForestDetector:
     @classmethod
     def load(cls, path: str) -> IsolationForestDetector:
         payload = load(path)
+        stored = payload.get("schema_version")
+        if stored != FEATURE_SCHEMA_VERSION:
+            raise DetectorError(
+                f"Persisted detector uses feature schema v{stored} but this build "
+                f"expects v{FEATURE_SCHEMA_VERSION}. Retrain the baseline."
+            )
         detector = cls(flagged_threshold=payload["flagged_threshold"])
         detector._model = payload["model"]
         detector._raw_min = payload["raw_min"]
