@@ -5,11 +5,13 @@ samples that need few splits to isolate are anomalous. It is the ideal MVP
 model because it is unsupervised (learns "normal" without attack labels),
 cheap to retrain per-machine, and naturally supports online baselines.
 
-Per-feature attribution uses leave-one-out scoring: we re-score the sample
-after replacing each feature with its baseline median and measure how much
-the raw score drops. The features whose removal normalises the sample are the
-ones that made it anomalous - this is the raw material for the
-explainability layer.
+Per-feature attribution is SHAP-style: instead of probing against a single
+median baseline, we sample background rows from the learned baseline
+distribution and average the raw-score drop when each feature is replaced
+with a background value. This mirrors how SHAP perturbs an instance against
+a reference set and yields attribution that is stable and faithful to the
+whole baseline, not a single central point. Models trained before M4 fall
+back to a single median probe automatically.
 """
 
 from __future__ import annotations
@@ -40,10 +42,13 @@ class IsolationForestDetector:
         n_estimators: int = 200,
         max_samples: int = 256,
         flagged_threshold: float = 0.60,
+        background_samples: int = 64,
         random_state: int = 42,
     ) -> None:
         self._contamination = contamination
         self._flagged_threshold = flagged_threshold
+        self._background_samples = background_samples
+        self._random_state = random_state
         self._model = IsolationForest(
             n_estimators=n_estimators,
             max_samples=max_samples,
@@ -54,6 +59,7 @@ class IsolationForestDetector:
         self._raw_min = 0.0
         self._raw_max = 0.0
         self._baseline_median: np.ndarray | None = None
+        self._baseline_rows: np.ndarray | None = None
 
     # -- lifecycle --------------------------------------------------------
     @property
@@ -80,6 +86,13 @@ class IsolationForestDetector:
         self._raw_min = float(np.percentile(raw_scores, 5))
         self._raw_max = float(-self._model.offset_) if self._model.offset_ is not None else 0.0
         self._baseline_median = np.median(X, axis=0)
+        # Keep a bounded reservoir of baseline rows so SHAP-style attribution
+        # can sample the distribution instead of probing a single median.
+        rng = np.random.default_rng(self._random_state)
+        if X.shape[0] <= 256:
+            self._baseline_rows = X.copy()
+        else:
+            self._baseline_rows = X[rng.choice(X.shape[0], size=256, replace=False)]
         self._trained = True
         logger.info(
             "Detector trained on %d samples (raw score range [%.3f, %.3f])",
@@ -102,22 +115,54 @@ class IsolationForestDetector:
         )
 
     def feature_contributions(self, vector: ProcessFeatures) -> dict[str, float]:
-        """Leave-one-out attribution against the baseline median.
+        """SHAP-style per-feature attribution against the baseline.
 
-        Batched into a single ``decision_function`` call so attribution stays
-        cheap enough to run per-window on every chain.
+        Uses the Strumbej-Kononenko sampling estimator: for a sample of
+        baseline rows, each feature's attribution is the average marginal
+        contribution of swapping that feature between the observed sample and
+        the baseline row, measured in both directions. Averaging over the
+        baseline distribution (rather than a single median) yields attribution
+        that is stable and captures correlations between features. Models
+        without a stored baseline (pre M4) fall back to a single median probe.
         """
         self._require_trained()
-        base = float(-self._model.decision_function(np.asarray([vector.to_vector()]))[0])
+        x = np.asarray([vector.to_vector()], dtype=float)[0]
+        base = float(-self._model.decision_function(x[None, :])[0])
 
-        probes = np.repeat(np.asarray([vector.to_vector()], dtype=float), len(FEATURE_NAMES), axis=0)
-        for i in range(len(FEATURE_NAMES)):
-            probes[i, i] = self._baseline_median[i]
-        probe_scores = -self._model.decision_function(probes)
+        if self._baseline_rows is None or len(self._baseline_rows) == 0:
+            probes = np.repeat(x[None, :], len(FEATURE_NAMES), axis=0)
+            for i in range(len(FEATURE_NAMES)):
+                probes[i, i] = self._baseline_median[i]
+            probe_scores = -self._model.decision_function(probes)
+            return {
+                name: round(max(0.0, base - float(probe)), 4)
+                for name, probe in zip(FEATURE_NAMES, probe_scores, strict=True)
+            }
 
+        rng = np.random.default_rng(self._random_state)
+        n = min(max(1, self._background_samples), len(self._baseline_rows))
+        background = self._baseline_rows[
+            rng.integers(0, len(self._baseline_rows), size=n)
+        ]
+        d = len(FEATURE_NAMES)
+        phi = np.zeros(d)
+        for b in background:
+            x_replace = np.repeat(x[None, :], d, axis=0)
+            b_replace = np.repeat(b[None, :], d, axis=0)
+            for i in range(d):
+                x_replace[i, i] = b[i]
+                b_replace[i, i] = x[i]
+            scores = -self._model.decision_function(
+                np.vstack([x[None, :], b[None, :], x_replace, b_replace])
+            )
+            f_x, f_b = scores[0], scores[1]
+            s_xr = scores[2 : 2 + d]
+            s_br = scores[2 + d : 2 + 2 * d]
+            phi += (f_x - s_xr) + (s_br - f_b)
+        phi /= 2.0 * n
         return {
-            name: round(max(0.0, base - float(probe)), 4)
-            for name, probe in zip(FEATURE_NAMES, probe_scores, strict=True)
+            name: round(float(value), 4)
+            for name, value in zip(FEATURE_NAMES, np.clip(phi, 0.0, None), strict=True)
         }
 
     # -- persistence ------------------------------------------------------
@@ -131,6 +176,8 @@ class IsolationForestDetector:
             "raw_min": self._raw_min,
             "raw_max": self._raw_max,
             "baseline_median": self._baseline_median,
+            "baseline_rows": self._baseline_rows.tolist() if self._baseline_rows is not None else None,
+            "background_samples": self._background_samples,
             "flagged_threshold": self._flagged_threshold,
         }
         dump(payload, target)
@@ -150,6 +197,11 @@ class IsolationForestDetector:
         detector._raw_min = payload["raw_min"]
         detector._raw_max = payload["raw_max"]
         detector._baseline_median = payload["baseline_median"]
+        stored_rows = payload.get("baseline_rows")
+        detector._baseline_rows = (
+            np.asarray(stored_rows, dtype=float) if stored_rows is not None else None
+        )
+        detector._background_samples = payload.get("background_samples", 64)
         detector._trained = True
         return detector
 

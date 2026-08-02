@@ -25,6 +25,13 @@ detection:
   autoload: true              # load a persisted model on boot if model_path exists
   refit_interval_windows: 10  # refit the baseline every N scored windows
   baseline_max_samples: 400   # sliding-window cap for the online baseline
+  attribution_background_samples: 64  # SHAP-style attribution sample budget
+
+explainability:
+  narrative_provider: rules    # rules | llm (offline/local model, optional)
+  llm_endpoint: http://127.0.0.1:11434  # Ollama-compatible local endpoint
+  llm_model: llama3.2:1b
+  llm_timeout_seconds: 10.0
 
 response:
   auto_approve_destructive: false

@@ -43,6 +43,7 @@ class DetectionConfig:
     autoload: bool = True
     refit_interval_windows: int = 10
     baseline_max_samples: int = 400
+    attribution_background_samples: int = 64
 
 
 @dataclass(slots=True)
@@ -57,6 +58,14 @@ class DashboardConfig:
 
 
 @dataclass(slots=True)
+class ExplainabilityConfig:
+    narrative_provider: str = "rules"  # "rules" | "llm" (local model, optional)
+    llm_endpoint: str = "http://127.0.0.1:11434"  # Ollama-compatible endpoint
+    llm_model: str = "llama3.2:1b"
+    llm_timeout_seconds: float = 10.0
+
+
+@dataclass(slots=True)
 class AppConfig:
     """Top-level application configuration bundle."""
 
@@ -64,6 +73,7 @@ class AppConfig:
     data_dir: str = "data"
     telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     detection: DetectionConfig = field(default_factory=DetectionConfig)
+    explainability: ExplainabilityConfig = field(default_factory=ExplainabilityConfig)
     response: ResponseConfig = field(default_factory=ResponseConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
 
@@ -88,6 +98,7 @@ class AppConfig:
     def _from_dict(cls, raw: dict[str, Any]) -> AppConfig:
         tel = raw.get("telemetry", {})
         det = raw.get("detection", {})
+        expl = raw.get("explainability", {})
         resp = raw.get("response", {})
         dash = raw.get("dashboard", {})
         return cls(
@@ -95,6 +106,7 @@ class AppConfig:
             data_dir=raw.get("data_dir", "data"),
             telemetry=TelemetryConfig(**{k: v for k, v in tel.items()}),
             detection=DetectionConfig(**{k: v for k, v in det.items()}),
+            explainability=ExplainabilityConfig(**{k: v for k, v in expl.items()}),
             response=ResponseConfig(**{k: v for k, v in resp.items()}),
             dashboard=DashboardConfig(**{k: v for k, v in dash.items()}),
         )
