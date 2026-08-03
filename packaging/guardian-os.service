@@ -1,0 +1,29 @@
+[Unit]
+Description=GuardianOS-AI web dashboard and API
+Documentation=https://github.com/dhamini06/WebCam_Spyware_Security/tree/main/GuardianOS-AI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=guardian
+Group=guardian
+ExecStart=/usr/local/bin/guardian-server --host 0.0.0.0 --port 8000 --auth
+Restart=on-failure
+RestartSec=5
+WorkingDirectory=/var/lib/guardian-os
+
+# RBAC tokens (optional; fall back to config/auth):
+# Environment=GUARDIAN_TOKEN_ADMIN=change-me-admin
+# Environment=GUARDIAN_TOKEN_ANALYST=change-me-analyst
+# Environment=GUARDIAN_TOKEN_VIEWER=change-me-viewer
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/guardian-os
+
+[Install]
+WantedBy=multi-user.target

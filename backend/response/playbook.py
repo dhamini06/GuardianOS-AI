@@ -22,7 +22,7 @@ from backend.response.actions import ResponseActionBuilder
 
 logger = get_logger("response.playbook")
 
-DEFAULT_PLAYBOOK_PATH = Path(__file__).resolve().parents[2] / "config" / "playbooks.yaml"
+DEFAULT_PLAYBOOK_PATH = Path(__file__).resolve().parent.parent / "config" / "playbooks.yaml"
 
 #: Built-in rules used when no playbook file is configured (equivalent to the
 #: pre-M5 hard-coded severity logic, so existing behaviour is preserved).

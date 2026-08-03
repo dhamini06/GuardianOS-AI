@@ -1,0 +1,18 @@
+Source: guardian-os-ai
+Section: admin
+Priority: optional
+Maintainer: GuardianOS-AI contributors <noreply@example.invalid>
+Build-Depends: debhelper-compat (= 13), dh-python, python3-all, python3-setuptools
+Standards-Version: 4.6.2
+Homepage: https://github.com/dhamini06/WebCam_Spyware_Security
+Rules-Requires-Root: no
+
+Package: guardian-os-ai
+Architecture: all
+Depends: ${python3:Depends}, ${misc:Depends}, python3 (>= 3.11)
+Recommends: python3-uvicorn, python3-fastapi
+Description: AI-powered, explainable Linux security assistant
+ GuardianOS-AI performs kernel-level intrusion and behavioural threat detection
+ with an explainable pipeline: telemetry -> features -> isolation-forest anomaly
+ scoring -> MITRE-tagged explanation -> response recommendations, exposed via a
+ FastAPI dashboard with role-based access control.

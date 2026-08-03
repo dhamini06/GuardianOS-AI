@@ -17,7 +17,7 @@ import yaml
 
 from backend.core.logging import setup_logging
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "defaults.yaml"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "defaults.yaml"
 
 
 @dataclass(slots=True)

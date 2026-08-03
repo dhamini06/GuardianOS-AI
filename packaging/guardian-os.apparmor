@@ -1,0 +1,31 @@
+# GuardianOS-AI AppArmor confinement profile.
+# Profile name must match the path of the installed binary.
+# Install:  sudo install -m 600 packaging/guardian-os.apparmor /etc/apparmor.d/usr.local.bin.guardian-server
+# Reload:   sudo apparmor_parser -r /etc/apparmor.d/usr.local.bin.guardian-server
+
+#include <tunables/global>
+
+/usr/local/bin/guardian-server {
+  #include <abstractions/base>
+  #include <abstractions/python>
+
+  # Telemetry sources (auditd log tailing / proc inspection).
+  /proc/ r,
+  /proc/** r,
+  /var/log/audit/audit.log r,
+  /sys/kernel/debug/tracing/ r,
+
+  # Runtime data directory (SQLite, audit trail, feedback ledger).
+  /var/lib/guardian-os/ rw,
+  /var/lib/guardian-os/** rwk,
+
+  # HTTP API + WebSocket server.
+  network inet stream,
+  network inet6 stream,
+
+  # Containment capabilities; the kernel-confinement claim is capped.
+  capability kill,
+  capability net_admin,
+  deny capability sys_module,
+  deny capability sys_admin,
+}

@@ -29,8 +29,16 @@ dev-full = [
     "build>=1.2",
 ]
 
+[project.scripts]
+guardian-server = "scripts.run_server:main"
+guardian-security-scan = "scripts.scan_security:main"
+
 [tool.setuptools.packages.find]
-include = ["backend*"]
+include = ["backend*", "scripts*"]
+
+[tool.setuptools.package-data]
+"backend.config" = ["*.yaml"]
+"backend.dashboard.web" = ["*.html", "*.css", "*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
