@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 from backend.core.analysis import ResponseAction
@@ -55,7 +56,7 @@ class ContainmentEntry:
         target: dict,
         description: str,
         reversible: bool,
-        undo: callable | None,
+        undo: Callable[[], None] | None,
         report_id: str | None = None,
     ) -> None:
         self.entry_id = uuid.uuid4().hex[:12]

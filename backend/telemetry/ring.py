@@ -112,6 +112,10 @@ class BoundedProviderMixin:
     and call :meth:`_deliver` with freshly parsed events.
     """
 
+    _ring: BoundedRing
+    _drops: DropCounter
+    _limiter: RateLimiter | None
+
     def _deliver(self, raw_events: list[KernelEvent]) -> list[KernelEvent]:
         ring_drops = self._ring.push_many(raw_events)
         self._drops.record(ring_drops)

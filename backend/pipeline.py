@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-from backend.core.analysis import ThreatReport
+from backend.core.analysis import DetectionResult, ThreatReport
 from backend.core.config import AppConfig
 from backend.core.events import KernelEvent
 from backend.core.logging import get_logger
@@ -106,7 +106,7 @@ class GuardianPipeline:
         self.reports: list[ThreatReport] = []
         # chain_key -> (fingerprint, DetectionResult); avoids re-scoring
         # chains whose events have not changed since the previous window.
-        self._chain_cache: dict[str, tuple[tuple, object]] = {}
+        self._chain_cache: dict[str, tuple[tuple, DetectionResult]] = {}
         # chain_key -> most recent feature vector, kept for analyst labelling.
         self._vector_by_chain: dict[str, ProcessFeatures] = {}
         feedback_path = Path(config.data_dir) / "feedback.jsonl" if config.data_dir else None

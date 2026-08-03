@@ -17,6 +17,7 @@ import ctypes
 import ipaddress
 import socket
 from collections import deque
+from typing import Any
 
 from backend.core.logging import get_logger
 from backend.telemetry.base import TelemetryError
@@ -124,7 +125,7 @@ class BPFProvider(BoundedProviderMixin):
         max_events: int = 500,
         rate_limit: float = 0.0,
     ) -> None:
-        self._bpf = None
+        self._bpf: Any = None
         self._samples: deque[_Sample] = deque()
         self._ring = BoundedRing(ring_capacity)
         self._drops = DropCounter()
@@ -166,7 +167,7 @@ class BPFProvider(BoundedProviderMixin):
         return self._deliver(parsed)
 
     # -- internals --------------------------------------------------------
-    def _on_sample(self, _cpu: int, data: bytes, _size: int) -> None:
+    def _on_sample(self, _cpu: int, data: Any, _size: int) -> None:
         sample = ctypes.cast(data, ctypes.POINTER(_Sample)).contents
         self._samples.append(sample)
 

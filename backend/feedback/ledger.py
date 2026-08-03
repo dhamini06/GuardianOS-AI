@@ -88,6 +88,8 @@ class FeedbackLedger:
                 fh.write(json.dumps(entry) + "\n")
 
     def _load(self) -> None:
+        if self._path is None:
+            return
         with self._path.open("r", encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()

@@ -14,14 +14,28 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated, Protocol
 
 from fastapi import Depends, HTTPException, Request, status
 
 from backend.core.config import AuthConfig
 
+if TYPE_CHECKING:
+    from backend.api.changes import ChangeLog
+    from backend.api.driver import PipelineDriver
+    from backend.pipeline import GuardianPipeline
+
 ROLE_LEVEL = {"viewer": 0, "analyst": 1, "admin": 2}
 ALL_ROLES = frozenset(ROLE_LEVEL)
+
+
+class StateView(Protocol):
+    """Structural view of :class:`RuntimeState` required by API dependencies."""
+
+    pipeline: GuardianPipeline
+    changes: ChangeLog
+    authenticator: Authenticator
+    driver: PipelineDriver | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,12 +81,12 @@ class Authenticator:
         return User(name="anonymous", roles=ALL_ROLES)
 
 
-def get_state(request: Request) -> object:
+def get_state(request: Request) -> StateView:
     """Dependency: the shared :class:`RuntimeState` held on the app."""
     return request.app.state.guardian
 
 
-def get_user(request: Request, state: Annotated[object, Depends(get_state)]) -> User:
+def get_user(request: Request, state: Annotated[StateView, Depends(get_state)]) -> User:
     """Dependency: resolve the request's principal from its token header."""
     authenticator = state.authenticator
     if not authenticator.enabled:
@@ -101,7 +115,7 @@ def require_role(required: str):
     return dependency
 
 
-GuardianState = Annotated[object, Depends(get_state)]
+GuardianState = Annotated[StateView, Depends(get_state)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
 AnalystUser = Annotated[User, Depends(require_role("analyst"))]
 ViewerUser = Annotated[User, Depends(require_role("viewer"))]

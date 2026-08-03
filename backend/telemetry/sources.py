@@ -14,6 +14,7 @@ import queue
 import subprocess
 import sys
 import threading
+from io import TextIOWrapper
 from pathlib import Path
 
 from backend.core.logging import get_logger
@@ -38,7 +39,7 @@ class AuditLogSource:
         self._path = Path(path)
         self._encoding = encoding
         self._errors = errors
-        self._fh = None
+        self._fh: TextIOWrapper | None = None
 
     @property
     def path(self) -> Path:

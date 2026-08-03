@@ -136,9 +136,12 @@ class IsolationForestDetector:
         base = float(-self._model.decision_function(x[None, :])[0])
 
         if self._baseline_rows is None or len(self._baseline_rows) == 0:
+            median = self._baseline_median
+            if median is None:
+                median = np.zeros(len(FEATURE_NAMES))
             probes = np.repeat(x[None, :], len(FEATURE_NAMES), axis=0)
             for i in range(len(FEATURE_NAMES)):
-                probes[i, i] = self._baseline_median[i]
+                probes[i, i] = median[i]
             probe_scores = -self._model.decision_function(probes)
             return {
                 name: round(max(0.0, base - float(probe)), 4)

@@ -22,21 +22,29 @@ def create_provider(config: AppConfig) -> TelemetryProvider:
     """Instantiate the telemetry provider named by ``config.telemetry.provider``."""
     name = config.telemetry.provider
     tel = config.telemetry
-    kwargs = {
-        "ring_capacity": tel.ring_capacity,
-        "max_events": tel.max_events_per_collect,
-        "rate_limit": tel.rate_limit_per_second,
-    }
     if name == "process_monitor":
         return ProcessMonitor()
     if name == "demo_generator":
         return DemoGenerator(scenario="normal", normal_runs=40)
     if name == "auditd":
-        return AuditdProvider(log_path=tel.audit_log_path, **kwargs)
+        return AuditdProvider(
+            log_path=tel.audit_log_path,
+            ring_capacity=tel.ring_capacity,
+            max_events=tel.max_events_per_collect,
+            rate_limit=tel.rate_limit_per_second,
+        )
     if name == "tracee":
-        return TraceeProvider(**kwargs)
+        return TraceeProvider(
+            ring_capacity=tel.ring_capacity,
+            max_events=tel.max_events_per_collect,
+            rate_limit=tel.rate_limit_per_second,
+        )
     if name == "bpf":
-        return BPFProvider(**kwargs)
+        return BPFProvider(
+            ring_capacity=tel.ring_capacity,
+            max_events=tel.max_events_per_collect,
+            rate_limit=tel.rate_limit_per_second,
+        )
     raise ValueError(
         f"Unknown telemetry provider {name!r}; expected one of {', '.join(PROVIDERS)}"
     )

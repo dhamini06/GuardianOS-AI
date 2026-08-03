@@ -16,6 +16,7 @@ from backend.api.security import (
     AdminUser,
     AnalystUser,
     GuardianState,
+    StateView,
     require_role,
 )
 from backend.core.logging import get_logger
@@ -34,7 +35,7 @@ class LabelRequest(BaseModel):
     note: str | None = None
 
 
-def _pipeline(state: object) -> GuardianPipeline:
+def _pipeline(state: StateView) -> GuardianPipeline:
     return state.pipeline
 
 
@@ -135,6 +136,8 @@ def approve_action(
     _action_or_404(report, action_index)
     logger.info("Action %d of report %s approved by %s", action_index, report_id, user.name)
     updated = pipeline.execute_action(report_id, action_index, actor=user.name)
+    if updated is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Report no longer available")
     return updated.to_dict()
 
 

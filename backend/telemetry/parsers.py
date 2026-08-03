@@ -122,7 +122,7 @@ _USERNAMES = _UsernameCache()
 
 
 def _is_suspicious_path(path: str | None) -> bool:
-    return bool(path) and path.startswith(SUSPICIOUS_DIRS)
+    return path is not None and path.startswith(SUSPICIOUS_DIRS)
 
 
 class AuditRecordParser:
@@ -335,16 +335,28 @@ def normalize_kernel_record(record: dict[str, Any]) -> list[KernelEvent]:
 
     if name in ("execve", "execveat"):
         exe = args.get("pathname") or record.get("exe") or "unknown"
-        base = {
-            "pid": pid,
-            "ppid": ppid,
-            "exe": exe,
-            "cmdline": cmdline,
-            "uid": uid,
-            "details": {"source": name},
-            "timestamp": ts,
-        }
-        return [make_event(EventKind.PROCESS_CREATED, **base), make_event(EventKind.EXEC, **base)]
+        return [
+            make_event(
+                EventKind.PROCESS_CREATED,
+                pid=pid,
+                ppid=ppid,
+                exe=exe,
+                cmdline=cmdline,
+                uid=uid,
+                details={"source": name},
+                timestamp=ts,
+            ),
+            make_event(
+                EventKind.EXEC,
+                pid=pid,
+                ppid=ppid,
+                exe=exe,
+                cmdline=cmdline,
+                uid=uid,
+                details={"source": name},
+                timestamp=ts,
+            ),
+        ]
 
     # Non-exec records don't carry the process binary; the upstream sampler
     # can enrich it, but scoring never depends on it for these kinds.
