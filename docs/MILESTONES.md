@@ -105,11 +105,25 @@ Kernel Event -> Behaviour Features -> Anomaly Detection -> Explanation
   tens of seconds (semantics unchanged - attribution is explainability for
   alerts).
 
-## Milestone 6 - Web dashboard and API
+## Milestone 6 - Web dashboard and API (DONE)
 
-- FastAPI service exposing events, threats, reports, actions over REST + WS.
-- Web dashboard (live view, timeline, chain graph, approval buttons).
-- RBAC and multi-tenant deployment.
+- FastAPI service (`backend/api/server.py::create_app`) exposing events,
+  threats, reports and response actions over REST (`/api/health`, `/api/events`,
+  `/api/threats`, approve/reject/rollback/label) plus a WebSocket live stream
+  (`/api/ws`) that pushes threat reports and health snapshots as they happen.
+- Web dashboard (no-build vanilla HTML/CSS/JS served by the API): live threat
+  timeline, AI explanation with behaviour-chain DAG, approval/reject/rollback
+  buttons and analyst labelling, and a recent-events table - all updating in
+  real time over the WebSocket.
+- Pipeline driver: a background thread (`backend/api/driver.py`) advances the
+  pipeline loop and streams changes through a thread-safe `ChangeLog`; a
+  customisable `tick` supports deterministic demo scenarios.
+- RBAC: token-based roles (`viewer < analyst < admin`) from `config/auth`
+  (`GUARDIAN_TOKEN_<NAME>` env overrides); read endpoints are viewer+,
+  analyst feedback analyst+, and destructive remediation (approve / reject /
+  rollback) admin-only. `auth.enabled: false` grants open local access.
+- Demo: `python scripts/run_server.py` learns a normal baseline from scripted
+  telemetry, then replays the attack chain live against the dashboard.
 
 ## Milestone 7 - Hardening, packaging, CI/CD
 

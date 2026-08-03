@@ -28,7 +28,7 @@ data flow of the MVP, and how each layer will evolve.
 | 3. AI Detection | `backend/detection` | Learn normal, flag deviation | `IsolationForestDetector` + hybrid signal scoring | autoencoder, supervised classifier, graph anomaly |
 | 4. Explainability | `backend/explainability` | Why + chain + MITRE + narrative | `RuleBasedExplainer` | SHAP-style attribution, LLM narrative |
 | 5. Response | `backend/response` | Recommend / perform remediation | `PlaybookEngine` -> `DecisionEngine` + `ApprovalGate` + `ContainmentManager` + `ActionExecutor` | policy engine, quarantine, more action types |
-| 6. Dashboard | `backend/dashboard` | Live operator view | `CliDashboard` (rich) | web dashboard, REST/WS API |
+| 6. Dashboard / API | `backend/dashboard` + `backend/api` | Live operator view | `CliDashboard` (rich) + FastAPI REST/WS + no-build web dashboard | multi-tenant, more visualisations |
 
 ## 3. Data flow (MVP vertical slice)
 
@@ -143,6 +143,33 @@ The response layer is driven by policy and stays accountable:
   flagged chains, so scoring normal windows is cheap while alert explainability
   is unchanged.
 
+## 4d. Web dashboard and API (M6)
+
+A FastAPI application (`backend/api/server.py::create_app`) exposes the live
+pipeline over REST + WebSocket and serves the no-build dashboard from
+`backend/dashboard/web`:
+
+- **Pipeline driver** (`backend/api/driver.py`): a worker thread advances the
+  pipeline one tick at a time (learn while learning, score windows once
+  trained) and records every new threat report plus a health snapshot into a
+  thread-safe `ChangeLog`. A custom `tick` callable supports deterministic
+  demo scenarios (learn normal -> replay attack).
+- **Live streaming** (`/api/ws`): clients poll the `ChangeLog` with a sequence
+  number and receive `{seq, items:[{kind: report|health, data}]}` deltas, so
+  the dashboard updates as threats are detected without browser polling.
+- **RBAC** (`backend/api/security.py`): token -> `User` (roles viewer <
+  analyst < admin). Read endpoints are viewer+, analyst feedback analyst+,
+  and destructive remediation (approve/reject/rollback) admin-only. Tokens
+  come from `config/auth/users`, overridable via `GUARDIAN_TOKEN_<NAME>` env
+  vars; `auth.enabled: false` grants open access for local demo.
+- **Web dashboard** (vanilla HTML/CSS/JS, no build step): live threat
+  timeline, AI explanation with behaviour-chain DAG, approval/reject/rollback
+  buttons and analyst labelling, plus a recent-events table.
+
+Run it with `python scripts/run_server.py` (learns a baseline from scripted
+telemetry, then replays the attack chain live); `scripts/run_dashboard.py`
+remains the terminal dashboard.
+
 ## 5. Extensibility points
 
 - **New telemetry source**: implement `TelemetryProvider` (Protocol) and
@@ -155,6 +182,8 @@ The response layer is driven by policy and stays accountable:
 - **New response action**: add a builder + executor handler and a playbook
   rule. Approval rules remain centralised in `ApprovalGate`.
 - **New dashboard**: consume `ThreatReport.to_dict()` and the `EventBuffer`.
+- **New API client / role**: add an endpoint + `require_role` gate; role
+  hierarchy and tokens live in `backend/api/security.py` + `config/auth`.
 
 ## 6. Runtime layout
 

@@ -236,6 +236,38 @@ execution and rollback is appended to a hash-chained JSONL file; with
 `response.signing_secret` / `GUARDIAN_SIGNING_SECRET` set, each record carries
 an HMAC-SHA256 signature. `verify_all(signer)` detects tampering.
 
+## 6d. Web dashboard and API (Layer 6, M6)
+
+`backend/api/server.py` -> `create_app(pipeline, config, *, start_driver=True,
+tick=None)` builds the FastAPI application: REST + WebSocket under `/api` and
+the no-build dashboard served from `backend/dashboard/web`. A background
+`PipelineDriver` (customisable `tick`) advances the pipeline and streams
+changes to connected clients.
+
+```python
+app = create_app(pipeline, config)          # driver thread runs the pipeline loop
+uvicorn.run(app, host=config.server.host, port=config.server.port)
+```
+
+Endpoints (roles: viewer < analyst < admin):
+
+| Method | Path | Role | Purpose |
+|--------|------|------|---------|
+| GET | `/api/health` | public | learning state, baseline, threat/event counts |
+| GET | `/api/events?limit=` | viewer+ | recent persisted events |
+| GET | `/api/threats` `/api/threats/{id}` | viewer+ | threat reports (full `to_dict()`) |
+| POST | `/api/threats/{id}/label` | analyst+ | `{"verdict": "benign"\|"malicious"}` feedback |
+| POST | `/api/threats/{id}/actions/{i}/approve` | admin | approve + execute an action |
+| POST | `/api/threats/{id}/actions/{i}/reject` | admin | reject an action |
+| POST | `/api/threats/{id}/rollback` | admin | undo reversible containment |
+| WS | `/api/ws?token=` | viewer+ | live `{"seq","items":[{seq,kind,data}]}` deltas |
+
+Authentication: `backend/api/security.py` `Authenticator` maps
+`X-GUARDIAN-TOKEN` (or `?token=` for WS) to a `User` with roles. Users come
+from `config/auth/users`, tokens overridable via `GUARDIAN_TOKEN_<NAME>` env
+vars; `auth.enabled: false` grants every request all roles (local demo).
+Dependency aliases: `GuardianState`, `ViewerUser`, `AnalystUser`, `AdminUser`.
+
 ## 7. Threat report (dashboard/API input)
 
 `backend/core/analysis.py` -> `ThreatReport`
@@ -264,7 +296,7 @@ pipeline.start()                         # auto-loads a persisted model if confi
 pipeline.ingest_tick()                   # learning phase
 pipeline.complete_learning()             # fits + persists the baseline model
 pipeline.analyze_window(on_report=...)   # detection phase (periodically refits)
-pipeline.execute_action(report_id, action_index)   # human approves an action
+pipeline.execute_action(report_id, action_index, actor="analyst")  # human approves an action
 pipeline.rollback_actions(report_id)               # undo all executed containment (M5)
 pipeline.label_chain(report_id, "benign" | "malicious", note=...)  # feedback loop
 pipeline.stop()
@@ -274,7 +306,9 @@ The pipeline also exposes `is_ready_to_detect()`, `learning_step()`, and
 `feedback` (a `FeedbackLedger` persisted under `<data_dir>/feedback.jsonl`).
 M5 additions: `playbook`, `signer`/`audit` (signed trail under
 `<data_dir>/audit.jsonl`), `containment` (reversible responses) and `storage`
-(SQLite under `<data_dir>/guardian.db`).
+(SQLite under `<data_dir>/guardian.db`). M6: `create_app()` (see 6d) runs the
+pipeline loop via a `PipelineDriver` thread; `execute_action` accepts an
+`actor` for audit attribution.
 
 ## 9. Configuration contract
 
@@ -310,3 +344,10 @@ M5 additions: `playbook`, `signer`/`audit` (signed trail under
 | storage | save_events | true | write telemetry events |
 | storage | save_reports | true | write threat reports |
 | storage | max_events | 100000 | sliding cap for persisted events |
+| server | host | `127.0.0.1` | API/dashboard bind address |
+| server | port | 8000 | API/dashboard port |
+| server | refresh_seconds | 1.0 | driver tick + WebSocket push cadence |
+| auth | enabled | false | require tokens (false = open local access) |
+| auth | token_header | `X-GUARDIAN-TOKEN` | header carrying the bearer token |
+| auth | default_role | `viewer` | role when a user lists none |
+| auth | users | `[]` | `{name, token, roles:[...]}` (env `GUARDIAN_TOKEN_<NAME>`) |
