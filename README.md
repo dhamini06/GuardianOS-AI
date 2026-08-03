@@ -85,30 +85,62 @@ python scripts/run_dashboard.py --scenario mixed
 ### Run the tests
 
 ```bash
+pip install -e ".[dev]"        # pytest + ruff + httpx
 pytest
 ```
+
+## Quality gates
+
+```bash
+pip install -e ".[dev-full]"   # adds mypy, pip-audit, cyclonedx-bom, build
+
+ruff check backend tests scripts
+mypy                           # static typing, clean across backend/
+python scripts/scan_security.py   # CycloneDX SBOM + pip-audit vulnerability scan
+GUARDIAN_BENCHMARK=1 pytest tests/test_benchmark.py   # opt-in perf floors
+```
+
+## Packaging & deployment
+
+The wheel is self-contained: YAML defaults and playbook rules
+(`backend/config/`) and the dashboard static assets ship as package data, and
+console entry points are registered (`guardian-server`, `guardian-security-scan`).
+
+```bash
+python -m build --wheel --outdir dist
+pip install dist/guardianos_ai-0.1.0-py3-none-any.whl
+guardian-server --host 0.0.0.0 --auth
+```
+
+Deployment artifacts live in `packaging/`: a systemd unit
+(`guardian-os.service`), an AppArmor confinement profile
+(`guardian-os.apparmor`), a `Dockerfile`, an RPM spec and Debian control
+metadata. CI (GitHub Actions) runs lint/type gates, a pytest matrix on Python
+3.11/3.12, the security scan and a wheel build.
 
 ## Repository layout
 
 ```
 GuardianOS-AI/
 ├── backend/
+│   ├── config/          # Bundled YAML defaults + playbook rules (package data)
 │   ├── core/            # Domain models, events, config, logging (no deps)
 │   ├── telemetry/       # Layer 1 - kernel event collection (psutil MVP, demo)
 │   ├── features/        # Layer 2 - behavioural feature engineering
 │   ├── detection/       # Layer 3 - Isolation Forest + hybrid scoring
 │   ├── explainability/  # Layer 4 - reasons, chain, MITRE, narrative
 │   ├── response/        # Layer 5 - decision engine, approval gate, executor
-│   ├── dashboard/       # Layer 6 - live terminal dashboard
+│   ├── storage/         # SQLite persistence for events and reports
+│   ├── api/             # Layer 6 - FastAPI REST + WebSocket + driver
+│   ├── dashboard/       # Web dashboard static assets + CLI dashboard
 │   └── pipeline.py      # Composition root (the vertical slice)
-├── config/defaults.yaml # Configuration baseline
+├── packaging/           # systemd unit, AppArmor profile, Dockerfile, rpm/deb
+├── .github/workflows/   # CI: lint, types, test matrix, security, wheel
 ├── docs/                # Architecture, interfaces, milestones
-├── scripts/             # Demo and dashboard runners
-├── tests/               # 44 tests across every layer
-├── pyproject.toml       # Packaging + tooling config
-├── requirements.txt
-├── Dockerfile
-└── docker-compose.yml
+├── scripts/             # Demo runners, server, security scans, benchmarks
+├── tests/               # 173 tests across every layer (+ opt-in benchmarks)
+├── pyproject.toml       # Packaging + tooling config (ruff/mypy/pip-audit)
+└── requirements.txt
 ```
 
 ## Project philosophy

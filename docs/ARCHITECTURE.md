@@ -76,9 +76,10 @@ model still captures long-tail behavioural drift.
 
 ## 4. Configuration
 
-Hierarchical: `config/defaults.yaml` <- user file <- dotted overrides
+Hierarchical: `backend/config/defaults.yaml` <- user file <- dotted overrides
 (e.g. `{"telemetry.window_seconds": 120}`). Exposed as `AppConfig`
-(`backend/core/config.py`).
+(`backend/core/config.py`). The defaults file ships inside the wheel as package
+data; the same applies to the playbook rules (`backend/config/playbooks.yaml`).
 
 ## 4a. Baseline lifecycle (M2)
 

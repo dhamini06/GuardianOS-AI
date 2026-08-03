@@ -207,7 +207,7 @@ EXECUTED (dry-run logs the intent) | FAILED
 branches with declarative rules:
 
 ```python
-engine = PlaybookEngine.load()               # config/playbooks.yaml (or built-in defaults)
+engine = PlaybookEngine.load()               # backend/config/playbooks.yaml (or built-in defaults)
 actions = engine.decide(vector, result, explanation)   # de-duplicated ResponseActions
 ```
 
@@ -312,7 +312,7 @@ pipeline loop via a `PipelineDriver` thread; `execute_action` accepts an
 
 ## 9. Configuration contract
 
-`backend/core/config.py` -> `AppConfig` (from `config/defaults.yaml`)
+`backend/core/config.py` -> `AppConfig` (from `backend/config/defaults.yaml`)
 
 | Section | Key | Default | Meaning |
 |---------|-----|---------|---------|

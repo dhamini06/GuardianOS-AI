@@ -125,12 +125,38 @@ Kernel Event -> Behaviour Features -> Anomaly Detection -> Explanation
 - Demo: `python scripts/run_server.py` learns a normal baseline from scripted
   telemetry, then replays the attack chain live against the dashboard.
 
-## Milestone 7 - Hardening, packaging, CI/CD
+## Milestone 7 - Hardening, packaging, CI/CD (DONE)
 
-- SBOM, vulnerability scanning, `pip-audit`, ruff + mypy gates.
-- Packaging: wheel, `.deb`/`.rpm`, systemd unit, SELinux/AppArmor profile.
-- GitHub Actions CI (test matrix on Linux + containerised integration).
-- Performance and load benchmarks for the telemetry layer.
+- Quality gates: `ruff` + `mypy` (strict-ish: `check_untyped_defs`,
+  `warn_unused_ignores`, `warn_redundant_casts`, `no_implicit_optional`) are
+  configured in `pyproject.toml`; `mypy backend scripts` is clean (55+ source
+  files), which included annotating every module touched and correcting real
+  latent issues (None-typed handles, `**dict[str, Any]` keyword splats,
+  `object`-typed pipeline results, `callable` vs `Callable`).
+- Dependency security: `scripts/scan_security.py` emits a reproducible
+  CycloneDX JSON SBOM (`cyclonedx-py`) and audits pinned requirements against
+  the vulnerability database (`pip-audit`); local run reports no known
+  vulnerabilities. Runs identically in CI.
+- Packaging: `backend/config/` now ships the YAML defaults + playbook inside
+  the wheel (`[tool.setuptools.package-data]`), dashboard static assets are
+  bundled, and console entry points (`guardian-server`,
+  `guardian-security-scan`) are registered. Verified end-to-end: the wheel
+  builds, installs into a clean venv, and resolves config/playbooks from the
+  installed package. Deployment artifacts live in `packaging/`: systemd unit
+  (`guardian-os.service`), AppArmor profile (`guardian-os.apparmor`),
+  `Dockerfile`, RPM spec and Debian control metadata.
+- GitHub Actions CI (`.github/workflows/ci.yml`): lint+types, a pytest matrix
+  on Python 3.11/3.12, the security scan (SBOM + vuln audit) with artifact
+  upload, and a wheel build job. (Note: the workflow lives under
+  `GuardianOS-AI/.github/workflows/`; if the sub-project is tracked inside a
+  parent repository, copy it to the parent root so GitHub Actions picks it up.)
+- Performance benchmarks: `scripts/benchmark_telemetry.py` measures the
+  telemetry hot paths - ring push+drain (~2M events/s), thread-safe buffer
+  transfer (~10M events/s), bounded `_deliver` (~2M events/s) and cold/steady
+  `analyze_window` latency (first window ~0.16 s with lazy attribution). The
+  same floors are enforced by opt-in tests (`GUARDIAN_BENCHMARK=1 pytest
+  tests/test_benchmark.py`), skipped in the default suite.
+- Full suite: 173 tests pass; 4 opt-in benchmark tests.
 
 ---
 
