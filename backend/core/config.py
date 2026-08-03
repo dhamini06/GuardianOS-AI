@@ -70,6 +70,31 @@ class DashboardConfig:
 
 
 @dataclass(slots=True)
+class ServerConfig:
+    """HTTP API + web dashboard server settings."""
+
+    host: str = "127.0.0.1"
+    port: int = 8000
+    refresh_seconds: float = 1.0  # driver tick + WebSocket push cadence
+
+
+@dataclass(slots=True)
+class AuthConfig:
+    """Role-based access control for the API.
+
+    Tokens are mapped to users with roles. ``enabled=False`` grants every
+    request all roles (convenient for local demo); production deployments
+    enable it and set per-user tokens (overridable via ``GUARDIAN_TOKEN_<NAME>``
+    env vars, e.g. ``GUARDIAN_TOKEN_ADMIN``).
+    """
+
+    enabled: bool = False
+    token_header: str = "X-GUARDIAN-TOKEN"
+    default_role: str = "viewer"
+    users: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class ExplainabilityConfig:
     narrative_provider: str = "rules"  # "rules" | "llm" (local model, optional)
     llm_endpoint: str = "http://127.0.0.1:11434"  # Ollama-compatible endpoint
@@ -89,6 +114,8 @@ class AppConfig:
     response: ResponseConfig = field(default_factory=ResponseConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
+    server: ServerConfig = field(default_factory=ServerConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
 
     @classmethod
     def load(
@@ -115,6 +142,8 @@ class AppConfig:
         resp = raw.get("response", {})
         stor = raw.get("storage", {})
         dash = raw.get("dashboard", {})
+        srv = raw.get("server", {})
+        aut = raw.get("auth", {})
         return cls(
             log_level=raw.get("log_level", "INFO"),
             data_dir=raw.get("data_dir", "data"),
@@ -124,6 +153,8 @@ class AppConfig:
             response=ResponseConfig(**{k: v for k, v in resp.items()}),
             storage=StorageConfig(**{k: v for k, v in stor.items()}),
             dashboard=DashboardConfig(**{k: v for k, v in dash.items()}),
+            server=ServerConfig(**{k: v for k, v in srv.items()}),
+            auth=AuthConfig(**{k: v for k, v in aut.items()}),
         )
 
 

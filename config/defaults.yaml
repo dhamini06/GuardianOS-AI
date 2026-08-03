@@ -49,3 +49,23 @@ storage:
 
 dashboard:
   refresh_seconds: 3.0
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  refresh_seconds: 1.0   # pipeline driver tick + WebSocket push cadence
+
+auth:
+  enabled: false          # demo default (all roles); enable + set tokens in production
+  token_header: X-GUARDIAN-TOKEN
+  default_role: viewer
+  users:                  # per-user tokens, overridable via GUARDIAN_TOKEN_<NAME> env
+    - name: admin
+      token: change-me-admin
+      roles: [admin]
+    - name: analyst
+      token: change-me-analyst
+      roles: [analyst]
+    - name: viewer
+      token: change-me-viewer
+      roles: [viewer]
