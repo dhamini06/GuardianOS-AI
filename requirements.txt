@@ -13,5 +13,10 @@ PyYAML>=6.0
 # Dashboard / terminal UX
 rich>=13.7
 
+# Web dashboard and API
+fastapi>=0.110
+uvicorn>=0.29
+
 # Tests
 pytest>=8.0
+httpx>=0.27

@@ -274,7 +274,13 @@ class GuardianPipeline:
         )
 
     # -- response control (dashboard-facing) ------------------------------
-    def execute_action(self, report_id: str, action_index: int) -> ThreatReport | None:
+    def execute_action(
+        self,
+        report_id: str,
+        action_index: int,
+        *,
+        actor: str = "analyst",
+    ) -> ThreatReport | None:
         """Approve and execute one action of a report; returns updated report."""
         for report in self.reports:
             if report.report_id != report_id:
@@ -282,7 +288,7 @@ class GuardianPipeline:
             if not (0 <= action_index < len(report.actions)):
                 return None
             action = report.actions[action_index]
-            self.gate.approve(action)
+            self.gate.approve(action, actor=actor)
             self.executor.execute(action, report_id=report.report_id)
             return report
         return None

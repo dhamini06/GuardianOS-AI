@@ -27,7 +27,9 @@ class SqliteStorage:
         self.db_path = Path(db_path)
         self.max_events = max_events
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.db_path))
+        # The pipeline driver writes from a worker thread while API requests
+        # read; SQLite itself serialises access, so allow cross-thread use.
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._create_schema()
 
