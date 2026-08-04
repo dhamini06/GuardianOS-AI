@@ -121,7 +121,7 @@ metadata. CI (GitHub Actions) runs lint/type gates, a pytest matrix on Python
 ## Repository layout
 
 ```
-GuardianOS-AI/
+.
 ├── backend/
 │   ├── config/          # Bundled YAML defaults + playbook rules (package data)
 │   ├── core/            # Domain models, events, config, logging (no deps)
@@ -132,15 +132,16 @@ GuardianOS-AI/
 │   ├── response/        # Layer 5 - decision engine, approval gate, executor
 │   ├── storage/         # SQLite persistence for events and reports
 │   ├── api/             # Layer 6 - FastAPI REST + WebSocket + driver
-│   ├── dashboard/       # Web dashboard static assets + CLI dashboard
-│   └── pipeline.py      # Composition root (the vertical slice)
-├── packaging/           # systemd unit, AppArmor profile, Dockerfile, rpm/deb
+│   └── dashboard/       # Web dashboard static assets + CLI dashboard
+├── packaging/           # systemd unit, AppArmor profile, rpm/deb metadata
 ├── .github/workflows/   # CI: lint, types, test matrix, security, wheel
 ├── docs/                # Architecture, interfaces, milestones
 ├── scripts/             # Demo runners, server, security scans, benchmarks
 ├── tests/               # 173 tests across every layer (+ opt-in benchmarks)
 ├── pyproject.toml       # Packaging + tooling config (ruff/mypy/pip-audit)
-└── requirements.txt
+├── requirements.txt
+├── Dockerfile
+└── docker-compose.yml
 ```
 
 ## Project philosophy
