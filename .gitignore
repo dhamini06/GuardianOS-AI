@@ -30,3 +30,6 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# local kernel self-test cwd fallback
+/report.txt
