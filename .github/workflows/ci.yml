@@ -85,6 +85,13 @@ jobs:
           sudo env PYTHONPATH=/usr/lib/python3/dist-packages
           python scripts/self_test_kernel.py
           --provider auditd --provider bpf --ensure-rules --duration 10
+          --report-dir build/kernel-self-test
+      - name: Upload kernel self-test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kernel-self-test-report
+          path: build/kernel-self-test/*.txt
 
   package:
     name: Build wheel

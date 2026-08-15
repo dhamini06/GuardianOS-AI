@@ -22,6 +22,7 @@ import argparse
 import contextlib
 import importlib.util
 import os
+import platform
 import shutil
 import socket
 import subprocess
@@ -58,6 +59,33 @@ _STOP = threading.Event()
 class _Factories(Protocol):
     def __call__(self, **kwargs: object) -> TelemetryProvider:
         ...
+
+
+def _run(cmd: list[str]) -> tuple[int, str]:
+    """Run a diagnostic command, returning (returncode, combined output)."""
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        return result.returncode, (result.stdout + result.stderr).strip()
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 127, str(exc)
+
+
+def _env_report() -> list[str]:
+    lines = [
+        f"platform   : {sys.platform}",
+        f"interpreter: {sys.executable}",
+        f"python     : {sys.version.split()[0]}",
+        f"euid       : {os.geteuid()}",
+        f"kernel     : {platform.uname().release}",
+        f"btf        : {'yes' if Path('/sys/kernel/btf/vmlinux').exists() else 'no'}",
+    ]
+    rc, out = _run(["auditctl", "-s"])
+    lines.append(f"auditctl -s: rc={rc} {out!r}")
+    rc, out = _run(["systemctl", "is-active", "auditd"])
+    lines.append(f"auditd active: rc={rc} {out}")
+    rc, out = _run(["auditctl", "-l"])
+    lines.append(f"auditctl -l: rc={rc} {out[:800]!r}")
+    return lines
 
 
 def _generate_activity() -> None:
@@ -109,17 +137,15 @@ def _factory(name: str, *, log_path: str) -> _Factories:
     raise ValueError(f"unknown provider {name!r}")
 
 
-def _ensure_rules(install: bool) -> bool:
-    """Add/remove the audit ruleset via auditctl. Needs root + auditd."""
+def _ensure_rules(install: bool) -> tuple[bool, str]:
+    """Add/remove the audit ruleset via auditctl. Needs root + a running auditd."""
     auditctl = shutil.which("auditctl")
     if not auditctl:
-        logger.warning("auditctl not found; rules not %s", "installed" if install else "removed")
-        return False
+        return False, "auditctl not found"
     if os.geteuid() != 0:
-        logger.warning("not running as root; rules not %s", "installed" if install else "removed")
-        return False
+        return False, "not running as root"
     action = "a" if install else "d"
-    ok = True
+    errors: list[str] = []
     for rule in AUDIT_RULES:
         result = subprocess.run(
             [auditctl, f"-{action}", *rule],
@@ -128,20 +154,22 @@ def _ensure_rules(install: bool) -> bool:
             text=True,
             check=False,
         )
-        if result.returncode != 0 and install:
-            logger.warning("auditctl rule failed: %s", result.stderr.strip())
-            ok = False
-    return ok
+        if result.returncode != 0:
+            errors.append(f"{rule}: {result.stderr.strip()}")
+    return not errors, "; ".join(errors)
 
 
-def _run_provider(name: str, provider: TelemetryProvider, duration: float) -> tuple[list, dict]:
-    """Start, generate activity while collecting, stop, return (events, health)."""
+def _run_provider(
+    name: str, provider: TelemetryProvider, duration: float, log_path: str
+) -> tuple[list, dict, str]:
+    """Start, generate activity while collecting, stop; return (events, health, detail)."""
+    detail = ""
     events: list = []
     worker: threading.Thread | None = None
     try:
         provider.start()
     except TelemetryError as exc:
-        return [], {"error": str(exc)}
+        return [], {"error": str(exc)}, str(exc)
     worker = threading.Thread(target=_generate_activity, daemon=True)
     worker.start()
     t0 = time.monotonic()
@@ -159,7 +187,12 @@ def _run_provider(name: str, provider: TelemetryProvider, duration: float) -> tu
         health = provider.status().to_dict()
     except Exception:  # noqa: BLE001
         health = {}
-    return events, health
+    if name == "auditd" and Path(log_path).exists():
+        rc, tail = _run(["tail", "-n", "10", log_path])
+        detail = f"audit.log tail (rc={rc}):\n" + "\n".join(f"    {ln}" for ln in tail.splitlines())
+    if health.get("last_error"):
+        detail = (detail + "\n" if detail else "") + f"last_error: {health['last_error']}"
+    return events, health, detail
 
 
 def main() -> int:
@@ -174,47 +207,79 @@ def main() -> int:
         "--ensure-rules", action="store_true",
         help="add audit rules via auditctl for the test, then remove them",
     )
+    parser.add_argument(
+        "--report-dir", default="build/kernel-self-test",
+        help="directory for the diagnostic report (uploaded as a CI artifact)",
+    )
     args = parser.parse_args()
 
+    report: list[str] = [f"GuardianOS-AI kernel telemetry self-test\n{'=' * 62}"]
+    exit_code = 0
+
     if not sys.platform.startswith("linux"):
-        print(f"kernel self-test requires Linux (platform={sys.platform})", file=sys.stderr)
+        msg = f"kernel self-test requires Linux (platform={sys.platform})"
+        print(msg, file=sys.stderr)
+        report.append(msg)
+        _write_report(args.report_dir, report)
         return 1
 
     names = args.provider or ["auditd", "tracee", "bpf"]
+    report += [f"command     : {sys.argv}", f"duration    : {args.duration}s"]
+    report += _env_report()
 
-    installed = _ensure_rules(install=True) if args.ensure_rules else False
-    if args.ensure_rules and not installed:
-        print("WARNING: could not install audit rules; auditd may see nothing", file=sys.stderr)
+    rules_ok, rules_err = _ensure_rules(install=True) if args.ensure_rules else (True, "")
+    if args.ensure_rules and not rules_ok:
+        report.append(f"audit rule install FAILED: {rules_err}")
+        print(f"WARNING: could not install audit rules ({rules_err}); "
+              "auditd may see nothing", file=sys.stderr)
 
     try:
         failures = 0
-        print("\nGuardianOS-AI kernel telemetry self-test\n" + "=" * 62)
         for name in names:
             available, why = _availability(name, log_path=args.log_path)
             if not available:
                 print(f"  {name:8s} SKIP   ({why})")
+                report.append(f"  {name:8s} SKIP   ({why})")
                 if args.provider:
                     failures += 1
                 continue
-            events, health = _run_provider(
-                name, _factory(name, log_path=args.log_path)(), args.duration
+            events, health, detail = _run_provider(
+                name, _factory(name, log_path=args.log_path)(), args.duration, args.log_path
             )
             status = "PASS" if events else "FAIL"
             if not events:
                 failures += 1
             kinds = ", ".join(sorted({e.kind.value for e in events[:200]}))
-            print(f"  {name:8s} {status}   events={len(events)}  kinds=[{kinds or '-'}]")
-            print(f"           health: {health}")
+            line = f"  {name:8s} {status}   events={len(events)}  kinds=[{kinds or '-'}]\n           health: {health}"
+            print(line)
+            report.append(line)
+            if detail:
+                print(f"           detail:\n{detail}")
+                report.append(f"           detail:\n{detail}")
         print("=" * 62)
         if failures:
-            print(f"RESULT: {failures} provider(s) produced no events")
-            return 1
-        print("RESULT: all probed providers delivered kernel events")
-        return 0
+            result = f"RESULT: {failures} provider(s) produced no events"
+            print(result)
+            report.append(result)
+            exit_code = 1
+        else:
+            result = "RESULT: all probed providers delivered kernel events"
+            print(result)
+            report.append(result)
+            exit_code = 0
+        return exit_code
     finally:
-        if installed:
+        if args.ensure_rules and rules_ok:
             _ensure_rules(install=False)
         _STOP.clear()
+        _write_report(args.report_dir, report)
+
+
+def _write_report(report_dir: str, lines: list[str]) -> None:
+    path = Path(report_dir) / "report.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"\nDiagnostic report written to {path}", file=sys.stderr)
 
 
 if __name__ == "__main__":
