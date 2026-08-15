@@ -77,7 +77,9 @@ jobs:
       - name: Install kernel tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends auditd bpfcc-tools python3-bpfcc
+          sudo apt-get install -y --no-install-recommends \
+            auditd bpfcc-tools python3-bpfcc python3-psutil python3-yaml
+          /usr/bin/python3 -c "import psutil, yaml; print('system python deps ok')"
       - name: Start auditd
         run: sudo systemctl start auditd || sudo service auditd start || true
       - name: Kernel self-test
@@ -86,14 +88,6 @@ jobs:
           /usr/bin/python3 scripts/self_test_kernel.py
           --provider auditd --provider bpf --ensure-rules --duration 10
           --report-dir $GITHUB_WORKSPACE/build/kernel-self-test
-      - name: Re-run kernel self-test verbatim (diagnostic)
-        if: always()
-        run: |
-          cd "$GITHUB_WORKSPACE"
-          sudo env PYTHONPATH=/usr/lib/python3/dist-packages /usr/bin/python3 \
-            scripts/self_test_kernel.py --provider auditd --provider bpf --ensure-rules \
-            --duration 10 --report-dir "$GITHUB_WORKSPACE/build/kernel-self-test" \
-            2>&1 | sed 's/^/::error::rerun: /' || true
       - name: Surface kernel self-test diagnostics
         if: always()
         run: |
