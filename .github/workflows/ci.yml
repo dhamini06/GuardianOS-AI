@@ -86,6 +86,14 @@ jobs:
           /usr/bin/python3 scripts/self_test_kernel.py
           --provider auditd --provider bpf --ensure-rules --duration 10
           --report-dir $GITHUB_WORKSPACE/build/kernel-self-test
+      - name: Re-run kernel self-test verbatim (diagnostic)
+        if: always()
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          sudo env PYTHONPATH=/usr/lib/python3/dist-packages /usr/bin/python3 \
+            scripts/self_test_kernel.py --provider auditd --provider bpf --ensure-rules \
+            --duration 10 --report-dir "$GITHUB_WORKSPACE/build/kernel-self-test" \
+            2>&1 | sed 's/^/::error::rerun: /' || true
       - name: Surface kernel self-test diagnostics
         if: always()
         run: |
