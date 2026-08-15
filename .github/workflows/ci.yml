@@ -9,10 +9,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    working-directory: GuardianOS-AI
-
 jobs:
   quality:
     name: Lint + types
@@ -65,7 +61,7 @@ jobs:
         if: always()
         with:
           name: security-reports
-          path: GuardianOS-AI/build/security/*.json
+          path: build/security/*.json
 
   kernel-self-test:
     name: Kernel telemetry (live auditd + eBPF, informational)
@@ -106,4 +102,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheel
-          path: GuardianOS-AI/dist/*.whl
+          path: dist/*.whl
