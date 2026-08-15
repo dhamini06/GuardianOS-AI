@@ -1,0 +1,3 @@
+GuardianOS-AI kernel telemetry self-test
+==============================================================
+kernel self-test requires Linux (platform=win32)

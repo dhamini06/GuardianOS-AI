@@ -30,6 +30,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from pathlib import Path
 from typing import Protocol
 
@@ -214,17 +215,25 @@ def main() -> int:
         "--report-dir", default="build/kernel-self-test",
         help="directory for the diagnostic report (uploaded as a CI artifact)",
     )
-    args = parser.parse_args()
 
     report: list[str] = [f"GuardianOS-AI kernel telemetry self-test\n{'=' * 62}"]
     try:
+        args = parser.parse_args()
         return _run_self_test(args, report)
-    except Exception as exc:  # noqa: BLE001 - a crash must still produce a report
-        report.append(f"INTERNAL ERROR: {type(exc).__name__}: {exc}")
-        print(f"INTERNAL ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return 1
+    except BaseException as exc:  # noqa: BLE001 - a crash must still produce a report
+        code = int(getattr(exc, "code", 1) or 1) if isinstance(exc, SystemExit) else 1
+        report.append(f"CRASH: {type(exc).__name__}: {exc}")
+        print(f"CRASH: {type(exc).__name__}: {exc}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        if isinstance(exc, SystemExit) and exc.code not in (None, 0):
+            report.append(f"SystemExit code: {exc.code}")
+        return code
     finally:
-        _write_report(args.report_dir, report)
+        written = _write_report(
+            args.report_dir if "args" in dir() else "build/kernel-self-test", report
+        )
+        print(f"Report locations:\n{written}", file=sys.stderr)
+        _emit_annotations(report)
 
 
 def _run_self_test(args: argparse.Namespace, report: list[str]) -> int:
@@ -283,11 +292,26 @@ def _run_self_test(args: argparse.Namespace, report: list[str]) -> int:
         _STOP.clear()
 
 
-def _write_report(report_dir: str, lines: list[str]) -> None:
-    path = Path(report_dir) / "report.txt"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"\nDiagnostic report written to {path}", file=sys.stderr)
+def _write_report(report_dir: str, lines: list[str]) -> str:
+    """Write the report to report-dir and a cwd fallback; never raises."""
+    content = "\n".join(lines) + "\n"
+    written: list[str] = []
+    for base in (report_dir, "."):
+        try:
+            path = Path(base) / "report.txt"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+            written.append(str(path))
+        except OSError as exc:
+            written.append(f"{base}/report.txt (FAILED: {exc})")
+    return "\n".join(written)
+
+
+def _emit_annotations(lines: list[str]) -> None:
+    """Surface the report as ::error:: annotations (readable without step logs)."""
+    for line in lines:
+        safe = line.replace("\n", " ").replace("::", ":")
+        print(f"::error::{safe}", file=sys.stderr)
 
 
 if __name__ == "__main__":
