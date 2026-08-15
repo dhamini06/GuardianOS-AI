@@ -76,9 +76,12 @@ def _env_report() -> list[str]:
         f"interpreter: {sys.executable}",
         f"python     : {sys.version.split()[0]}",
         f"euid       : {os.geteuid()}",
+        f"cwd        : {os.getcwd()}",
         f"kernel     : {platform.uname().release}",
         f"btf        : {'yes' if Path('/sys/kernel/btf/vmlinux').exists() else 'no'}",
     ]
+    for cmd in ("python", "python3", "auditctl", "tracee-ebpf"):
+        lines.append(f"which {cmd}   : {shutil.which(cmd) or 'not found'}")
     rc, out = _run(["auditctl", "-s"])
     lines.append(f"auditctl -s: rc={rc} {out!r}")
     rc, out = _run(["systemctl", "is-active", "auditd"])
@@ -214,13 +217,21 @@ def main() -> int:
     args = parser.parse_args()
 
     report: list[str] = [f"GuardianOS-AI kernel telemetry self-test\n{'=' * 62}"]
-    exit_code = 0
+    try:
+        return _run_self_test(args, report)
+    except Exception as exc:  # noqa: BLE001 - a crash must still produce a report
+        report.append(f"INTERNAL ERROR: {type(exc).__name__}: {exc}")
+        print(f"INTERNAL ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        _write_report(args.report_dir, report)
 
+
+def _run_self_test(args: argparse.Namespace, report: list[str]) -> int:
     if not sys.platform.startswith("linux"):
         msg = f"kernel self-test requires Linux (platform={sys.platform})"
         print(msg, file=sys.stderr)
         report.append(msg)
-        _write_report(args.report_dir, report)
         return 1
 
     names = args.provider or ["auditd", "tracee", "bpf"]
@@ -233,8 +244,8 @@ def main() -> int:
         print(f"WARNING: could not install audit rules ({rules_err}); "
               "auditd may see nothing", file=sys.stderr)
 
+    failures = 0
     try:
-        failures = 0
         for name in names:
             available, why = _availability(name, log_path=args.log_path)
             if not available:
@@ -261,18 +272,15 @@ def main() -> int:
             result = f"RESULT: {failures} provider(s) produced no events"
             print(result)
             report.append(result)
-            exit_code = 1
-        else:
-            result = "RESULT: all probed providers delivered kernel events"
-            print(result)
-            report.append(result)
-            exit_code = 0
-        return exit_code
+            return 1
+        result = "RESULT: all probed providers delivered kernel events"
+        print(result)
+        report.append(result)
+        return 0
     finally:
         if args.ensure_rules and rules_ok:
             _ensure_rules(install=False)
         _STOP.clear()
-        _write_report(args.report_dir, report)
 
 
 def _write_report(report_dir: str, lines: list[str]) -> None:

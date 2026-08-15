@@ -83,9 +83,9 @@ jobs:
       - name: Kernel self-test
         run: >
           sudo env PYTHONPATH=/usr/lib/python3/dist-packages
-          python scripts/self_test_kernel.py
+          /usr/bin/python3 scripts/self_test_kernel.py
           --provider auditd --provider bpf --ensure-rules --duration 10
-          --report-dir build/kernel-self-test
+          --report-dir $GITHUB_WORKSPACE/build/kernel-self-test
       - name: Upload kernel self-test report
         uses: actions/upload-artifact@v4
         if: always()
