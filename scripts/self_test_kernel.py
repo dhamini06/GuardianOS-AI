@@ -48,10 +48,10 @@ DEFAULT_LOG = "/var/log/audit/audit.log"
 
 # auditctl rules mirrored by CI: capture the syscalls the providers care about.
 AUDIT_RULES = (
-    ("-a", "always,exit", "-F", "arch=b64", "-S", "execve"),
-    ("-a", "always,exit", "-F", "arch=b64", "-S", "openat"),
-    ("-a", "always,exit", "-F", "arch=b64", "-S", "connect"),
-    ("-a", "always,exit", "-F", "arch=b64", "-S", "setuid"),
+    ("always,exit", "-F", "arch=b64", "-S", "execve"),
+    ("always,exit", "-F", "arch=b64", "-S", "openat"),
+    ("always,exit", "-F", "arch=b64", "-S", "connect"),
+    ("always,exit", "-F", "arch=b64", "-S", "setuid"),
 )
 
 _STOP = threading.Event()
