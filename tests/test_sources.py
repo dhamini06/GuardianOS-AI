@@ -108,8 +108,8 @@ def test_audit_source_handles_copytruncate(tmp_path):
 
         path.write_text("", encoding="utf-8")  # truncate in place
         with path.open("a", encoding="utf-8") as fh:
-            fh.write("after-truncate\n")
-        assert source.read_new_lines() == ["after-truncate"]
+            fh.write("after\n")
+        assert source.read_new_lines() == ["after"]
         assert source.truncations == 1
     finally:
         source.stop()

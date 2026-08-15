@@ -124,7 +124,10 @@ class AuditLogSource:
         with contextlib.suppress(OSError):
             self._fh.close()
         self._fh = self._path.open("r", encoding=self._encoding, errors=self._errors)
-        self._fh.seek(0, 2)
+        # Read the fresh file from its start: it appeared after our last read,
+        # so every line is new and must not be skipped (a tail-from-end would
+        # silently drop events written between rotation and detection).
+        self._fh.seek(0)
         self._inode = current
         self._rotations += 1
         logger.info("AuditLogSource: %s rotated (count=%d)", self._path, self._rotations)
