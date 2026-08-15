@@ -125,6 +125,21 @@ def _is_suspicious_path(path: str | None) -> bool:
     return path is not None and path.startswith(SUSPICIOUS_DIRS)
 
 
+def _open_flags(ctx: dict[str, Any], syscall: int) -> int:
+    """Decode open(2)-family flags from the audit SYSCALL register args.
+
+    Register layout (x86_64): ``open(fd? , path, flags, mode)`` ->
+    ``open``: flags in ``a1``; ``openat``: dirfd in ``a0``, path in ``a1``,
+    flags in ``a2``. Values arrive as decimal, hex (``0x41``) or symbolic
+    audit strings; :func:`_flags` handles all three.
+    """
+    if syscall == 2:
+        return _flags(ctx.get("a1"))
+    if syscall == 257:
+        return _flags(ctx.get("a2"))
+    return 0
+
+
 class AuditRecordParser:
     """Stateful parser that reassembles multi-record auditd events."""
 
@@ -204,19 +219,55 @@ class AuditRecordParser:
                 syscall=_int(record.get("syscall")),
                 success=record.get("success"),
                 a0=record.get("a0"),
+                a1=record.get("a1"),
+                a2=record.get("a2"),
+                a3=record.get("a3"),
                 key=record.get("key"),
                 comm=record.get("comm"),
             )
         elif rtype == "EXECVE":
-            argc = _int(record.get("argc"))
-            ctx["argv"] = [record.get(f"a{i}", "") for i in range(argc)]
+            ctx["argv"] = self._execve_args(record)
         elif rtype == "PATH":
-            ctx["path"] = None if record.get("name") == "(null)" else record.get("name")
+            ctx["path"] = self._path_name(record)
         elif rtype == "SOCKADDR":
             ctx["saddr"] = record.get("saddr")
         elif rtype == "CONNECT":
             ctx["success"] = record.get("success")
         return ctx
+
+    @staticmethod
+    def _execve_args(record: dict[str, Any]) -> list[str]:
+        """EXECVE args, tolerating truncated or ``(null)`` values.
+
+        Real audit logs cap ``argv`` (``max_log_file`` / ``max_log_file_action``)
+        and emit ``aN="(null)"`` for the truncated tail; neither should leak
+        bogus empty or "(null)" entries into the reconstructed command line.
+        """
+        argc = _int(record.get("argc"))
+        argv: list[str] = []
+        for i in range(argc):
+            arg = record.get(f"a{i}")
+            if arg in (None, "", "(null)"):
+                continue
+            argv.append(arg)
+        return argv
+
+    @staticmethod
+    def _path_name(record: dict[str, Any]) -> str | None:
+        """PATH record name, preferring the semantically meaningful records.
+
+        A single syscall can emit several ``PATH`` records (the file, its
+        parent directory, deleted entries, ...). ``nametype`` disambiguates
+        them: ``NORMAL``/``CREATE``/``DELETE``/``PARENT`` all refer to real
+        paths; records without one (metadata records) are ignored.
+        """
+        name = record.get("name")
+        if name in (None, "", "(null)"):
+            return None
+        nametype = str(record.get("nametype", "")).upper()
+        if nametype and nametype not in {"NORMAL", "CREATE", "DELETE", "PARENT"}:
+            return None
+        return name
 
     def _emit(self, ctx: dict[str, Any]) -> list[KernelEvent]:
         syscall = ctx.get("syscall", 0)
@@ -250,7 +301,14 @@ class AuditRecordParser:
             path = ctx.get("path")
             if not path:
                 return []
-            kind = EventKind.FILE_WRITE if (_is_suspicious_path(path) or syscall == 85) else EventKind.FILE_READ
+            flags = _open_flags(ctx, syscall)
+            write = (
+                syscall == 85  # creat is always a write
+                or _is_suspicious_path(path)
+                or bool(flags & _O_CREAT)
+                or bool(flags & _O_WRITE)
+            )
+            kind = EventKind.FILE_WRITE if write else EventKind.FILE_READ
             return [
                 make_event(
                     kind,
@@ -259,7 +317,7 @@ class AuditRecordParser:
                     exe=ctx.get("exe") or ctx.get("comm") or "unknown",
                     uid=ctx["uid"],
                     username=_USERNAMES.get(ctx["uid"]),
-                    details={"path": path, "syscall": syscall},
+                    details={"path": path, "syscall": syscall, "flags": flags},
                     timestamp=ctx["timestamp"],
                     session_leader=ctx.get("ses"),
                 )

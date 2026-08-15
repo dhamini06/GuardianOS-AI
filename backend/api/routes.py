@@ -63,6 +63,7 @@ def health(state: GuardianState) -> dict:
         "threats": len(pipeline.reports),
         "events_in_window": len(pipeline.current_window()),
         "ready": pipeline.is_ready_to_detect(),
+        "telemetry": pipeline.telemetry_status(),
     }
 
 

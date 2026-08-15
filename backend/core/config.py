@@ -29,6 +29,9 @@ class TelemetryConfig:
     ring_capacity: int = 10_000
     max_events_per_collect: int = 500
     rate_limit_per_second: float = 0.0
+    subprocess_queue_capacity: int = 10_000  # bounded stdout queue (tracee provider)
+    subprocess_auto_restart: bool = True  # restart a dead tracee subprocess
+    subprocess_restart_backoff_seconds: float = 1.0  # initial backoff (exponential)
 
 
 @dataclass(slots=True)

@@ -223,6 +223,9 @@ class _FakePipeline:
     def is_ready_to_detect(self) -> bool:
         return True
 
+    def telemetry_status(self) -> dict:
+        return {"provider": "fake", "running": True}
+
 
 def test_driver_records_reports_and_health():
     changes = ChangeLog()

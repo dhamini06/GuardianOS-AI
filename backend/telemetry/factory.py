@@ -38,6 +38,9 @@ def create_provider(config: AppConfig) -> TelemetryProvider:
             ring_capacity=tel.ring_capacity,
             max_events=tel.max_events_per_collect,
             rate_limit=tel.rate_limit_per_second,
+            queue_capacity=tel.subprocess_queue_capacity,
+            auto_restart=tel.subprocess_auto_restart,
+            restart_backoff=tel.subprocess_restart_backoff_seconds,
         )
     if name == "bpf":
         return BPFProvider(

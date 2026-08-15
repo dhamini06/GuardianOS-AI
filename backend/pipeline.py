@@ -31,7 +31,7 @@ from backend.response.containment import ContainmentManager
 from backend.response.decision import DecisionEngine
 from backend.response.playbook import PlaybookEngine
 from backend.storage.sqlite import SqliteStorage
-from backend.telemetry.base import TelemetryProvider
+from backend.telemetry.base import TelemetryError, TelemetryProvider
 from backend.telemetry.event_bus import EventBuffer
 from backend.telemetry.factory import create_provider
 
@@ -256,11 +256,25 @@ class GuardianPipeline:
 
     # -- shared helpers ---------------------------------------------------
     def _ingest(self) -> None:
-        events = self.telemetry.collect()
+        """Collect one telemetry tick, tolerating transient source faults."""
+        try:
+            events = self.telemetry.collect()
+        except TelemetryError as exc:
+            # A dead source (rotated file, crashed subprocess) must never
+            # crash the whole pipeline; the provider surfaces its own health.
+            logger.warning("Telemetry collect failed: %s", exc)
+            return
         if events:
             self.buffer.extend(events)
             if self.storage is not None and self.config.storage.save_events:
                 self.storage.save_events(events)
+
+    def telemetry_status(self) -> dict:
+        """Operational snapshot of the underlying telemetry provider."""
+        try:
+            return self.telemetry.status().to_dict()
+        except Exception:  # noqa: BLE001 - health reporting must never raise
+            return {"provider": type(self.telemetry).__name__, "running": False, "last_error": "status unavailable"}
 
     def current_window(self) -> list[KernelEvent]:
         return self.buffer.window(self.config.telemetry.window_seconds)

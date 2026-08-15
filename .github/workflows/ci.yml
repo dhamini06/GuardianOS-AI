@@ -67,6 +67,29 @@ jobs:
           name: security-reports
           path: GuardianOS-AI/build/security/*.json
 
+  kernel-self-test:
+    name: Kernel telemetry (live auditd + eBPF, informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Install kernel tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends auditd bpfcc-tools python3-bpfcc
+      - name: Start auditd
+        run: sudo systemctl start auditd || sudo service auditd start || true
+      - name: Kernel self-test
+        run: >
+          sudo env PYTHONPATH=/usr/lib/python3/dist-packages
+          python scripts/self_test_kernel.py
+          --provider auditd --provider bpf --ensure-rules --duration 10
+
   package:
     name: Build wheel
     runs-on: ubuntu-latest

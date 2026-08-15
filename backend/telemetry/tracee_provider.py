@@ -33,30 +33,50 @@ class TraceeProvider(BoundedProviderMixin):
         ring_capacity: int = 10_000,
         max_events: int = 500,
         rate_limit: float = 0.0,
+        queue_capacity: int | None = None,
+        auto_restart: bool = True,
+        restart_backoff: float = 1.0,
     ) -> None:
         command = [binary, "--json", *(extra_args or [])]
-        self._source = SubprocessLineSource(command)
+        self._source = SubprocessLineSource(
+            command,
+            max_queue=queue_capacity,
+            auto_restart=auto_restart,
+            restart_backoff=restart_backoff,
+        )
         self._ring = BoundedRing(ring_capacity)
         self._drops = DropCounter()
         self._limiter = RateLimiter(rate_limit) if rate_limit and rate_limit > 0 else None
         self._max_events = max_events
         self._started = False
+        self._provider_name = "tracee"
 
     # -- lifecycle --------------------------------------------------------
     def start(self) -> None:
         require_linux("TraceeProvider")
         self._source.start()
         self._started = True
+        self.mark_started()
         logger.info("TraceeProvider started")
 
     def stop(self) -> None:
         self._source.stop()
         self._started = False
+        self.mark_stopped()
 
     # -- core -------------------------------------------------------------
     def collect(self) -> list:
         if not self._started:
             raise TelemetryError("TraceeProvider.collect() called before start()")
+        try:
+            return self._collect_once()
+        except TelemetryError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - surface transient source faults
+            self._mark_error(exc)
+            raise TelemetryError(f"TraceeProvider collect failed: {exc}") from exc
+
+    def _collect_once(self) -> list:
         parsed: list = []
         for line in self._source.read_lines():
             if len(parsed) >= self._max_events:
@@ -67,3 +87,6 @@ class TraceeProvider(BoundedProviderMixin):
                 continue
             parsed.extend(normalize_kernel_record(data))
         return self._deliver(parsed)
+
+    def _source_status(self) -> dict:
+        return self._source.status()

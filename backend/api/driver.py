@@ -79,4 +79,5 @@ class PipelineDriver:
             "threats": len(self.pipeline.reports),
             "events_in_window": len(self.pipeline.current_window()),
             "ready": self.pipeline.is_ready_to_detect(),
+            "telemetry": self.pipeline.telemetry_status(),
         }

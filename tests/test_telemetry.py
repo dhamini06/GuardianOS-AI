@@ -88,3 +88,25 @@ def test_process_monitor_lifecycle():
     events = monitor.collect()
     monitor.stop()
     assert isinstance(events, list)
+
+
+def test_providers_report_health():
+    from backend.telemetry.demo_generator import DemoGenerator
+    from backend.telemetry.process_monitor import ProcessMonitor
+
+    monitor = ProcessMonitor(include_network=False)
+    assert not monitor.status().running
+    monitor.start()
+    monitor.collect()
+    assert monitor.status().running
+    assert monitor.status().events_delivered >= 0
+    monitor.stop()
+    assert not monitor.status().running
+
+    generator = DemoGenerator("normal", speed=1e6, normal_runs=1)
+    assert not generator.status().running
+    generator.collect()  # auto-starts and drains the script
+    health = generator.status()
+    assert health.running
+    assert health.events_delivered > 0
+    assert health.source["scenario"] == "normal"

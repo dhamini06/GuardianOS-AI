@@ -132,6 +132,7 @@ class BPFProvider(BoundedProviderMixin):
         self._limiter = RateLimiter(rate_limit) if rate_limit and rate_limit > 0 else None
         self._max_events = max_events
         self._started = False
+        self._provider_name = "bpf"
 
     # -- lifecycle --------------------------------------------------------
     def start(self) -> None:
@@ -149,22 +150,31 @@ class BPFProvider(BoundedProviderMixin):
         self._attach(self._bpf)
         self._bpf["events"].open_perf_buffer(self._on_sample)
         self._started = True
+        self.mark_started()
         logger.info("BPFProvider started (kprobes: execve, tcp_v4_connect, setuid)")
 
     def stop(self) -> None:
         self._bpf = None
         self._started = False
+        self.mark_stopped()
 
     # -- core -------------------------------------------------------------
     def collect(self) -> list:
         if not self._started or self._bpf is None:
             raise TelemetryError("BPFProvider.collect() called before start()")
-        self._bpf.perf_buffer_poll(timeout=50)
+        try:
+            self._bpf.perf_buffer_poll(timeout=50)
+        except Exception as exc:  # noqa: BLE001 - kernel polls can fail under pressure
+            self._mark_error(exc)
+            raise TelemetryError(f"BPFProvider perf poll failed: {exc}") from exc
         parsed: list = []
         while self._samples and len(parsed) < self._max_events:
             record = self._decode(self._samples.popleft())
             parsed.extend(normalize_kernel_record(record))
         return self._deliver(parsed)
+
+    def _source_status(self) -> dict:
+        return {"bpf_loaded": self._bpf is not None, "kprobes": ["execve", "tcp_v4_connect", "setuid"]}
 
     # -- internals --------------------------------------------------------
     def _on_sample(self, _cpu: int, data: Any, _size: int) -> None:

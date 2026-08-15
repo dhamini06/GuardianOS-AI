@@ -158,6 +158,45 @@ Kernel Event -> Behaviour Features -> Anomaly Detection -> Explanation
   tests/test_benchmark.py`), skipped in the default suite.
 - Full suite: 173 tests pass; 4 opt-in benchmark tests.
 
+## Milestone 8 - Real kernel telemetry test (DONE)
+
+- Provider hardening for real-world conditions. `AuditLogSource` now survives
+  `logrotate`: it detects rename-rotation (new inode -> re-open and seek to
+  end) and copytruncate (file shrinks under the cursor -> rewind), counting
+  each as `rotations`/`truncations`. `SubprocessLineSource` (Tracee) gained a
+  bounded stdout queue with drop accounting, stderr tail capture for
+  diagnostics, and automatic restart with exponential backoff (capped at 60 s)
+  so a crashed child can never wedge the pipeline.
+- Fault containment: providers (`auditd`, `tracee`, `bpf`) wrap collect-time
+  faults in `TelemetryError`, record the last error, and the pipeline
+  `_ingest` treats a dead source as a degraded-but-running condition instead
+  of a crash. New config knobs `subprocess_queue_capacity`,
+  `subprocess_auto_restart` and `subprocess_restart_backoff_seconds` tune the
+  subprocess source.
+- Real-world audit parsing: `_open_flags` decodes `open`/`openat` register
+  args so `O_CREAT|O_WRONLY` classifies file *writes* correctly (not just
+  suspicious paths); `_path_name` picks informative `nametype` records
+  (NORMAL/CREATE/DELETE/PARENT) over UNKNOWN; `_execve_args` truncates argv
+  to the recorded `argc` and skips `(null)`/missing entries.
+- Operational health: `ProviderHealth.status()` reports running state,
+  events delivered, ring drops, rate-limited events, restarts and last error
+  per provider; surfaced on `/api/health` as `telemetry` via
+  `pipeline.telemetry_status()`.
+- Tests for all of the above: rotation (rename + copytruncate), auto-restart,
+  bounded queue, stderr capture, open-flag write detection, PATH nametype
+  filtering, execve argv truncation, a realistic multi-record audit log replayed
+  end-to-end through `AuditdProvider`, and status tracking for the ring mixin,
+  `DemoGenerator` and `ProcessMonitor`.
+- Live validation: `scripts/self_test_kernel.py` starts each requested kernel
+  provider, generates real activity (exec, file write, connect, setuid) while
+  collecting, and passes only if the provider delivered events with a healthy
+  `status()`; `--ensure-rules` installs/removes the auditd ruleset via
+  `auditctl`. Wired into CI as an informational
+  `kernel-self-test` job (ubuntu-latest, `continue-on-error: true`) so flaky
+  runner kernels (BPF symbols/headers) can never block a PR.
+- Full suite: 188 tests pass on Linux; 4 opt-in benchmarks + 2 rotation tests
+  (logrotate is Linux-only) skipped on other platforms.
+
 ---
 
 ### Guiding rules

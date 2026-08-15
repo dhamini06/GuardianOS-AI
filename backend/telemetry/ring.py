@@ -1,4 +1,4 @@
-"""Low-overhead telemetry primitives (M3).
+"""Low-overhead telemetry primitives (M3, hardened in M8).
 
 Kernel-level sources can fire thousands of events per second. These small
 building blocks bound memory, account for what had to be dropped, and keep
@@ -10,7 +10,9 @@ delivery within a configured rate so the pipeline stays responsive:
 * :class:`DropCounter` - running and per-collect drop accounting.
 * :class:`RateLimiter` - token bucket that caps delivered events per second.
 * :class:`BoundedProviderMixin` - shared collect-time delivery logic for
-  providers built on these primitives.
+  providers built on these primitives, including an operational
+  :meth:`~BoundedProviderMixin.status` snapshot (drops, rate-limiting, last
+  error) surfaced on the API health endpoint.
 """
 
 from __future__ import annotations
@@ -18,8 +20,10 @@ from __future__ import annotations
 import time
 from collections import deque
 from collections.abc import Iterable
+from typing import Any
 
 from backend.core.events import KernelEvent
+from backend.telemetry.base import ProviderHealth
 
 
 class BoundedRing:
@@ -109,13 +113,48 @@ class BoundedProviderMixin:
     """Shared delivery path for providers using a ring + drop + rate limit.
 
     Subclasses must set ``_ring``, ``_drops`` and (optionally) ``_limiter``
-    and call :meth:`_deliver` with freshly parsed events.
+    and call :meth:`_deliver` with freshly parsed events. The mixin tracks
+    delivery, ring drops, rate-limited events and the last error so
+    :meth:`status` can describe how the source is coping under load.
     """
 
     _ring: BoundedRing
     _drops: DropCounter
     _limiter: RateLimiter | None
+    _rate_drops: DropCounter
 
+    _provider_name: str = "provider"
+    _started_at: float | None = None
+    _last_collect_at: float | None = None
+    _last_error: str | None = None
+    _events_delivered: int = 0
+
+    # -- lifecycle hooks --------------------------------------------------
+    def mark_started(self) -> None:
+        """Reset the operational counters for a fresh start."""
+        self._started_at = time.monotonic()
+        self._last_collect_at = None
+        self._last_error = None
+        self._events_delivered = 0
+        self._rate_counter().take_recent()  # reset recent rate accounting
+
+    def mark_stopped(self) -> None:
+        self._started_at = None
+
+    def _mark_error(self, exc: BaseException) -> None:
+        self._last_error = f"{type(exc).__name__}: {exc}"
+
+    def _source_status(self) -> dict[str, Any]:
+        """Source-specific diagnostics; overridden by concrete providers."""
+        return {}
+
+    def _rate_counter(self) -> DropCounter:
+        """Lazily created rate-drop counter (kept in sync with ``_drops``)."""
+        if getattr(self, "_rate_drops", None) is None:
+            self._rate_drops = DropCounter()
+        return self._rate_drops
+
+    # -- core -------------------------------------------------------------
     def _deliver(self, raw_events: list[KernelEvent]) -> list[KernelEvent]:
         ring_drops = self._ring.push_many(raw_events)
         self._drops.record(ring_drops)
@@ -123,9 +162,32 @@ class BoundedProviderMixin:
         if self._limiter is not None:
             allowed = self._limiter.allow(len(out))
             if allowed < len(out):
-                self._drops.record(len(out) - allowed)
+                dropped_by_rate = len(out) - allowed
+                self._rate_counter().record(dropped_by_rate)
+                self._drops.record(dropped_by_rate)
                 out = out[:allowed]
+        self._events_delivered += len(out)
+        self._last_collect_at = time.monotonic()
         return out
 
     def drop_stats(self) -> dict[str, int]:
+        """Combined (ring + rate) drop accounting, in-place counters."""
         return self._drops.snapshot()
+
+    def status(self) -> ProviderHealth:
+        """Operational snapshot; recent counters reset on each call."""
+        rate = self._rate_counter()
+        recent = self._drops.take_recent()
+        rate_recent = rate.take_recent()
+        return ProviderHealth(
+            provider=self._provider_name,
+            running=self._started_at is not None,
+            started_at=self._started_at,
+            last_collect_at=self._last_collect_at,
+            events_delivered=self._events_delivered,
+            drops_total=self._drops.total - rate.total,
+            drops_recent=max(0, recent - rate_recent),
+            rate_limited=rate.total,
+            last_error=self._last_error,
+            source=self._source_status(),
+        )

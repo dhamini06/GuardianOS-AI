@@ -13,6 +13,9 @@ telemetry:
   ring_capacity: 10000       # bounded ring of parsed events at the source
   max_events_per_collect: 500  # per-collect budget; excess waits for next tick
   rate_limit_per_second: 0   # 0 = unlimited; else token-bucket cap on delivery
+  subprocess_queue_capacity: 10000  # bounded stdout queue for the tracee subprocess
+  subprocess_auto_restart: true      # restart tracee-ebpf if it exits unexpectedly
+  subprocess_restart_backoff_seconds: 1.0  # initial restart backoff (exponential, capped)
 
 detection:
   contamination: 0.01         # expected anomaly share for Isolation Forest

@@ -38,22 +38,34 @@ class AuditdProvider(BoundedProviderMixin):
         self._limiter = RateLimiter(rate_limit) if rate_limit and rate_limit > 0 else None
         self._max_events = max_events
         self._started = False
+        self._provider_name = "auditd"
 
     # -- lifecycle --------------------------------------------------------
     def start(self) -> None:
         require_linux("AuditdProvider")
         self._source.start()
         self._started = True
+        self.mark_started()
         logger.info("AuditdProvider tailing %s", self._source.path)
 
     def stop(self) -> None:
         self._source.stop()
         self._started = False
+        self.mark_stopped()
 
     # -- core -------------------------------------------------------------
     def collect(self) -> list:
         if not self._started:
             raise TelemetryError("AuditdProvider.collect() called before start()")
+        try:
+            return self._collect_once()
+        except TelemetryError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - surface transient source faults
+            self._mark_error(exc)
+            raise TelemetryError(f"AuditdProvider collect failed: {exc}") from exc
+
+    def _collect_once(self) -> list:
         parsed: list = []
         for line in self._source.read_new_lines()[: self._max_events]:
             parsed.extend(self._parser.feed(line))
@@ -61,3 +73,6 @@ class AuditdProvider(BoundedProviderMixin):
                 break
         parsed.extend(self._parser.flush())
         return self._deliver(parsed)
+
+    def _source_status(self) -> dict:
+        return self._source.status()

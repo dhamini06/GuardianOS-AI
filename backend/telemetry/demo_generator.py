@@ -21,6 +21,7 @@ import time
 
 from backend.core.events import EventKind, KernelEvent, make_event
 from backend.core.logging import get_logger
+from backend.telemetry.base import ProviderHealth
 
 logger = get_logger("telemetry.demo_generator")
 
@@ -216,6 +217,8 @@ class DemoGenerator:
         self._started = False
         self._base_time = 0.0
         self._cursor = 0
+        self._delivered = 0
+        self._last_collect_at: float | None = None
         self._normal_end = self._compute_normal_end()
 
     def _compute_normal_end(self) -> float | None:
@@ -248,6 +251,8 @@ class DemoGenerator:
         self._started = True
         self._base_time = time.time()
         self._cursor = 0
+        self._delivered = 0
+        self._last_collect_at = None
         logger.info(
             "DemoGenerator started (scenario=%s, speed=%.1fx, events=%d)",
             self.scenario,
@@ -279,4 +284,20 @@ class DemoGenerator:
             event.timestamp = event_time
             due.append(event)
             self._cursor += 1
+        self._delivered += len(due)
+        self._last_collect_at = time.time()
         return due
+
+    def status(self) -> ProviderHealth:
+        return ProviderHealth(
+            provider="demo_generator",
+            running=self._started,
+            last_collect_at=self._last_collect_at,
+            events_delivered=self._delivered,
+            source={
+                "scenario": self.scenario,
+                "speed": self.speed,
+                "remaining": self.remaining,
+                "exhausted": self.exhausted,
+            },
+        )

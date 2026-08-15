@@ -99,3 +99,54 @@ def test_bounded_provider_mixin_delivers_and_accounts(monkeypatch):
     assert len(delivered) == 2
     stats = dummy.drop_stats()
     assert stats["total"] >= 8
+
+
+def test_bounded_provider_status_tracks_delivery(monkeypatch):
+    now = 1000.0
+
+    def fake_monotonic():
+        return now
+
+    monkeypatch.setattr("backend.telemetry.ring.time.monotonic", fake_monotonic)
+
+    class Dummy(BoundedProviderMixin):
+        def __init__(self):
+            self._ring = BoundedRing(capacity=100)
+            self._drops = DropCounter()
+            self._limiter = None
+
+    dummy = Dummy()
+    assert not dummy.status().running
+    dummy.mark_started()
+    dummy._deliver([_event(i) for i in range(3)])
+    health = dummy.status()
+    assert health.running
+    assert health.provider == "provider"
+    assert health.events_delivered == 3
+    assert health.drops_total == 0
+    assert health.last_collect_at is not None
+    dummy.mark_stopped()
+    assert not dummy.status().running
+
+
+def test_bounded_provider_status_counts_rate_limited(monkeypatch):
+    now = 1000.0
+
+    def fake_monotonic():
+        return now
+
+    monkeypatch.setattr("backend.telemetry.ring.time.monotonic", fake_monotonic)
+
+    class Dummy(BoundedProviderMixin):
+        def __init__(self):
+            self._ring = BoundedRing(capacity=100)
+            self._drops = DropCounter()
+            self._limiter = RateLimiter(per_second=1, burst=2)
+
+    dummy = Dummy()
+    dummy.mark_started()
+    dummy._deliver([_event(i) for i in range(10)])
+    health = dummy.status()
+    assert health.events_delivered == 2
+    assert health.rate_limited == 8
+    assert health.drops_total == 0  # ring had capacity; the limiter held the rest

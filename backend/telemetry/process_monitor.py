@@ -19,7 +19,7 @@ import psutil
 
 from backend.core.events import EventKind, KernelEvent, make_event
 from backend.core.logging import get_logger
-from backend.telemetry.base import TelemetryError
+from backend.telemetry.base import ProviderHealth, TelemetryError
 
 logger = get_logger("telemetry.process_monitor")
 
@@ -39,10 +39,16 @@ class ProcessMonitor:
         self._known_procs: dict[int, tuple[str, float]] = {}
         self._known_conns: set[tuple] = set()
         self._started = False
+        self._events_delivered = 0
+        self._last_collect_at: float | None = None
+        self._last_error: str | None = None
 
     # -- lifecycle --------------------------------------------------------
     def start(self) -> None:
         self._started = True
+        self._events_delivered = 0
+        self._last_collect_at = None
+        self._last_error = None
         self._baseline()
 
     def stop(self) -> None:
@@ -54,10 +60,25 @@ class ProcessMonitor:
     def collect(self) -> list[KernelEvent]:
         if not self._started:
             raise TelemetryError("ProcessMonitor.collect() called before start()")
-        events = self._diff_processes()
-        if self.include_network:
-            events.extend(self._diff_network())
+        try:
+            events = self._diff_processes()
+            if self.include_network:
+                events.extend(self._diff_network())
+        except Exception as exc:  # noqa: BLE001 - psutil surfaces transient OS faults
+            self._last_error = f"{type(exc).__name__}: {exc}"
+            raise
+        self._events_delivered += len(events)
+        self._last_collect_at = time.time()
         return events
+
+    def status(self) -> ProviderHealth:
+        return ProviderHealth(
+            provider="process_monitor",
+            running=self._started,
+            last_collect_at=self._last_collect_at,
+            events_delivered=self._events_delivered,
+            last_error=self._last_error,
+        )
 
     # -- internals --------------------------------------------------------
     def _baseline(self) -> None:
