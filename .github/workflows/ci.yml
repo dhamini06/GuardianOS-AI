@@ -64,7 +64,7 @@ jobs:
           path: build/security/*.json
 
   kernel-self-test:
-    name: Kernel telemetry (live auditd + eBPF, informational)
+    name: Kernel telemetry (live auditd, informational)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -79,21 +79,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             auditd bpfcc-tools python3-bpfcc python3-psutil python3-yaml
-          # Distro bcc (0.29 on noble) predates kernel 6.17's bpf.h (bpf_wq,
-          # BPF_LOAD_ACQ/BPF_STORE_REL) so kprobe programs fail to compile on
-          # the runner kernel. Best-effort upgrade from the iovisor PPA; if the
-          # PPA is unavailable the distro bcc stays (bpf then reports SKIP/FAIL).
-          sudo add-apt-repository -y ppa:iovisor/bcc >/dev/null 2>&1 || true
-          sudo apt-get update >/dev/null 2>&1 || true
-          sudo apt-get install -y --no-install-recommends bcc >/dev/null 2>&1 || true
           /usr/bin/python3 -c "import psutil, yaml; print('system python deps ok')"
       - name: Start auditd
         run: sudo systemctl start auditd || sudo service auditd start || true
       - name: Kernel self-test
+        # Gate on auditd: distro bcc 0.29 (noble) cannot compile kprobes against
+        # the runner's kernel 6.17 headers (bpf_wq / BPF_LOAD_ACQ), so eBPF is
+        # not CI-validatable here and stays best-effort for matching hosts.
         run: >
           sudo env PYTHONPATH=/usr/lib/python3/dist-packages
           /usr/bin/python3 scripts/self_test_kernel.py
-          --provider auditd --provider bpf --ensure-rules --duration 10
+          --provider auditd --ensure-rules --duration 10
           --report-dir $GITHUB_WORKSPACE/build/kernel-self-test
       - name: Surface kernel self-test diagnostics
         if: always()

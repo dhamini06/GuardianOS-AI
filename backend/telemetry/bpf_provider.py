@@ -14,9 +14,11 @@ it exposes the same events with a maintained, well-tested tool.
 from __future__ import annotations
 
 import ctypes
+import io
 import ipaddress
 import socket
 from collections import deque
+from contextlib import redirect_stderr
 from typing import Any
 
 from backend.core.logging import get_logger
@@ -144,9 +146,17 @@ class BPFProvider(BoundedProviderMixin):
                 "BPFProvider needs the python3-bcc package (apt install python3-bcc bpfcc-tools)"
             ) from exc
         try:
-            self._bpf = BPF(text=BPF_PROGRAM)
+            # BCC's compile errors go to stderr; capture them so the failure
+            # message explains the actual clang/kernel incompatibility instead
+            # of swallowing it into "<text>".
+            with redirect_stderr(_bcc_stderr := io.StringIO()):
+                self._bpf = BPF(text=BPF_PROGRAM)
         except Exception as exc:  # noqa: BLE001 - bcc raises varied kernel errors
-            raise TelemetryError(f"BPF load failed (kernel too old / missing headers?): {exc}") from exc
+            diagnostics = "\n".join(_bcc_stderr.getvalue().splitlines()[-8:])
+            detail = f": {diagnostics}" if diagnostics else ""
+            raise TelemetryError(
+                f"BPF load failed (kernel too old / missing headers?){detail}"
+            ) from exc
         self._attach(self._bpf)
         self._bpf["events"].open_perf_buffer(self._on_sample)
         self._started = True
