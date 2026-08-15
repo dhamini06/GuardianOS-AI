@@ -91,19 +91,13 @@ jobs:
       - name: Surface kernel self-test diagnostics
         if: always()
         run: |
-          echo "::error::cwd=$(pwd) GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
-          id | sed 's/^/::error::user: /'
-          sudo -n id 2>&1 | sed 's/^/::error::sudo: /'
-          sudo -n /usr/bin/python3 -c 'import sys; print("py-ok", sys.version.split()[0])' 2>&1 | sed 's/^/::error::sudo-python: /'
-          ls -la "$GITHUB_WORKSPACE/build" 2>&1 | sed 's/^/::error::lsbuild: /'
           REPORT=$GITHUB_WORKSPACE/build/kernel-self-test/report.txt
           if [ -f "$REPORT" ]; then
-            echo "::error::REPORT FOUND at $REPORT ($(wc -l < "$REPORT") lines)"
-            while IFS= read -r line; do echo "::error::$line"; done < "$REPORT"
+            echo "::error::REPORT: $(wc -l < "$REPORT") lines"
+            while IFS= read -r line; do echo "::error::$line"; done < <(tail -n 36 "$REPORT")
           else
             echo "::error::REPORT MISSING at $REPORT"
             find / -name report.txt -path "*kernel-self-test*" 2>/dev/null | sed 's/^/::error::found: /'
-            echo "::error::no report found anywhere on disk"
           fi
       - name: Upload kernel self-test report
         uses: actions/upload-artifact@v4
