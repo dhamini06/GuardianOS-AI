@@ -86,6 +86,18 @@ jobs:
           /usr/bin/python3 scripts/self_test_kernel.py
           --provider auditd --provider bpf --ensure-rules --duration 10
           --report-dir $GITHUB_WORKSPACE/build/kernel-self-test
+      - name: Surface kernel self-test diagnostics
+        if: always()
+        run: |
+          echo "::error::cwd=$(pwd) GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          REPORT=$GITHUB_WORKSPACE/build/kernel-self-test/report.txt
+          if [ -f "$REPORT" ]; then
+            echo "::error::REPORT FOUND at $REPORT ($(wc -l < "$REPORT") lines)"
+            while IFS= read -r line; do echo "::error::$line"; done < "$REPORT"
+          else
+            echo "::error::REPORT MISSING at $REPORT"
+            find / -name report.txt -path "*kernel-self-test*" 2>/dev/null | sed 's/^/::error::found: /'
+          fi
       - name: Upload kernel self-test report
         uses: actions/upload-artifact@v4
         if: always()
