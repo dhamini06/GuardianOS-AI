@@ -194,9 +194,12 @@ class GuardianPipeline:
 
     def complete_learning(self) -> None:
         # If the buffer was only ingested (no incremental extraction), build
-        # the baseline from the complete window so chains are not partial.
+        # the baseline from the whole learning period so chains are complete
+        # and the baseline reflects every observed behaviour, not just the
+        # final rolling window (which live providers would shrink to a few
+        # chains, starving the detector of "normal").
         if not self._baseline:
-            self._add_to_baseline(self.extractor.extract(self.current_window()))
+            self._add_to_baseline(self.extractor.extract(self.buffer.peek()))
         if not self.is_ready_to_detect():
             logger.warning(
                 "Completing learning with %d samples (below suggested %d)",
