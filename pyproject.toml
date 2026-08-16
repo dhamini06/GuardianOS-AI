@@ -38,7 +38,7 @@ include = ["backend*", "scripts*"]
 
 [tool.setuptools.package-data]
 "backend.config" = ["*.yaml"]
-"backend.dashboard.web" = ["*.html", "*.css", "*.js"]
+"backend.dashboard.web" = ["*.html", "*.css", "*.js", "assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

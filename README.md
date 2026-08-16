@@ -82,6 +82,22 @@ response actions.
 python scripts/run_dashboard.py --scenario mixed
 ```
 
+### Run the web dashboard
+
+```bash
+python scripts/run_server.py          # serves the SPA + API at http://localhost:8000
+```
+
+The React frontend lives in `frontend/`; production builds are committed to
+`backend/dashboard/web/` and served by the API. For frontend development:
+
+```bash
+cd frontend
+npm install
+npm run dev                          # Vite dev server, proxies /api to :8000
+npm run build                        # tsc + Vite -> ../backend/dashboard/web
+```
+
 ### Run the tests
 
 ```bash

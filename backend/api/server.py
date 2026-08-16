@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.api.changes import ChangeLog
@@ -73,4 +73,13 @@ def create_app(
         return FileResponse(WEB_DIR / "index.html")
 
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+
+    # SPA catch-all: serve the React app for client-side routes (deep links).
+    # Anything under /api or /static that did not match a route is a 404.
+    @app.get("/{full_path:path}", include_in_schema=False, response_model=None)
+    async def spa(full_path: str) -> FileResponse | JSONResponse:
+        if full_path.startswith(("api/", "static/")):
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        return FileResponse(WEB_DIR / "index.html")
+
     return app

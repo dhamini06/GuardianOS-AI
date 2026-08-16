@@ -1,51 +1,20 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GuardianOS-AI Dashboard</title>
-  <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="logo">&#128737;</span>
-      <span class="title">GuardianOS-AI</span>
-      <span class="subtitle">kernel-level behavioural security</span>
-    </div>
-    <div class="stats">
-      <span id="stat-status" class="pill pill-idle">connecting…</span>
-      <span id="stat-baseline" class="pill">baseline <b>0</b></span>
-      <span id="stat-threats" class="pill">threats <b>0</b></span>
-      <span id="stat-events" class="pill">events <b>0</b></span>
-    </div>
-    <div class="token">
-      <input id="token-input" type="password" placeholder="token (optional)" autocomplete="off">
-    </div>
-  </header>
-
-  <main class="layout">
-    <section class="panel timeline-panel">
-      <h2>Threat timeline</h2>
-      <ul id="threat-list" class="threat-list"></ul>
-    </section>
-
-    <section class="panel detail-panel">
-      <h2>Analysis</h2>
-      <div id="detail" class="detail"></div>
-    </section>
-  </main>
-
-  <footer class="panel events-panel">
-    <h2>Recent events</h2>
-    <table id="events-table">
-      <thead>
-        <tr><th>Time</th><th>Kind</th><th>PID</th><th>Executable</th><th>Detail</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </footer>
-
-  <script src="/static/app.js"></script>
-</body>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="GuardianOS-AI - AI-powered, explainable Linux kernel-level intrusion and behavioral threat detection."
+    />
+    <title>GuardianOS-AI</title>
+    <script type="module" crossorigin src="/static/assets/index-D3k0Mri2.js"></script>
+    <link rel="modulepreload" crossorigin href="/static/assets/react-B8MnRT7O.js">
+    <link rel="modulepreload" crossorigin href="/static/assets/charts-BQU9M43D.js">
+    <link rel="stylesheet" crossorigin href="/static/assets/index-Dk5ZFicT.css">
+  </head>
+  <body class="dark:bg-gray-950">
+    <div id="root"></div>
+  </body>
 </html>

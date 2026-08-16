@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 
 import pytest
@@ -100,9 +101,21 @@ def test_index_and_static_served(tmp_path):
             index = client.get("/")
             assert index.status_code == 200
             assert b"GuardianOS-AI" in index.content
-            js = client.get("/static/app.js")
-            assert js.status_code == 200
-            assert b"connectWS" in js.content
+
+            # Built React assets referenced by index.html resolve under /static.
+            asset_refs = re.findall(rb"/static/assets/[A-Za-z0-9_.-]+\.(?:js|css)", index.content)
+            assert asset_refs, "index.html should reference built /static/assets bundles"
+            for ref in set(asset_refs):
+                asset = client.get(ref.decode())
+                assert asset.status_code == 200, ref
+                assert asset.headers["content-type"].startswith(("text/javascript", "text/css"))
+            assert client.get("/static/favicon.svg").status_code == 200
+
+            # SPA deep links serve the app shell, unknown API paths still 404.
+            deep = client.get("/threats/abc-123")
+            assert deep.status_code == 200
+            assert b"GuardianOS-AI" in deep.content
+            assert client.get("/api/does-not-exist").status_code == 404
     finally:
         pipeline.stop()
 

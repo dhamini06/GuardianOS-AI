@@ -111,9 +111,10 @@ Kernel Event -> Behaviour Features -> Anomaly Detection -> Explanation
   threats, reports and response actions over REST (`/api/health`, `/api/events`,
   `/api/threats`, approve/reject/rollback/label) plus a WebSocket live stream
   (`/api/ws`) that pushes threat reports and health snapshots as they happen.
-- Web dashboard (no-build vanilla HTML/CSS/JS served by the API): live threat
-  timeline, AI explanation with behaviour-chain DAG, approval/reject/rollback
-  buttons and analyst labelling, and a recent-events table - all updating in
+- Web dashboard (React SPA in `frontend/`, built by Vite and served by the API
+  from `backend/dashboard/web`): live threat timeline, AI explanation with
+  behaviour-chain DAG, approval/reject/rollback buttons and analyst labelling,
+  and a recent-events table - all updating in
   real time over the WebSocket.
 - Pipeline driver: a background thread (`backend/api/driver.py`) advances the
   pipeline loop and streams changes through a thread-safe `ChangeLog`; a

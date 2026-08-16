@@ -240,7 +240,8 @@ an HMAC-SHA256 signature. `verify_all(signer)` detects tampering.
 
 `backend/api/server.py` -> `create_app(pipeline, config, *, start_driver=True,
 tick=None)` builds the FastAPI application: REST + WebSocket under `/api` and
-the no-build dashboard served from `backend/dashboard/web`. A background
+the built React dashboard served from `backend/dashboard/web` (source in
+`frontend/`, SPA catch-all for deep links). A background
 `PipelineDriver` (customisable `tick`) advances the pipeline and streams
 changes to connected clients.
 

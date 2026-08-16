@@ -26,6 +26,28 @@ jobs:
       - name: mypy
         run: mypy
 
+  frontend:
+    name: Frontend build (npm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+      - name: Typecheck + build
+        working-directory: frontend
+        run: npm run build
+      - name: Verify built dashboard is packaged
+        run: |
+          test -f backend/dashboard/web/index.html
+          test -d backend/dashboard/web/assets
+          echo "built frontend served from backend/dashboard/web"
+
   test:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
