@@ -42,6 +42,7 @@ class DetectionConfig:
     normalise_threshold: float = 0.75
     flagged_threshold: float = 0.6
     min_baseline_samples: int = 25
+    min_learning_windows: int = 5  # live providers: learning ticks before detection starts
     model_path: str | None = None
     autoload: bool = True
     refit_interval_windows: int = 10

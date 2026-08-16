@@ -166,15 +166,21 @@ class GuardianPipeline:
     def is_ready_to_detect(self) -> bool:
         return self.detector.is_trained or len(self._baseline) >= self._min_baseline_samples
 
-    def learning_step(self, *, min_windows: int = 5) -> None:
+    def learning_step(self, *, min_windows: int | None = None) -> None:
         """One live learning tick; completes automatically.
 
         For scripted telemetry (which exposes ``normal_phase_ends``) learning
         completes when the normal phase ends. For real providers it completes
-        after ``min_windows`` ticks once enough baseline is available.
+        after ``min_windows`` ticks (config: ``detection.min_learning_windows``)
+        once enough baseline is available.
         """
         if not self.learning:
             return
+        min_windows = (
+            min_windows
+            if min_windows is not None
+            else self.config.detection.min_learning_windows
+        )
         self.ingest_tick()
         self._learning_ticks += 1
         normal_end = getattr(self.telemetry, "normal_phase_ends", None)

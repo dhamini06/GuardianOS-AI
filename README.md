@@ -98,6 +98,28 @@ npm run dev                          # Vite dev server, proxies /api to :8000
 npm run build                        # tsc + Vite -> ../backend/dashboard/web
 ```
 
+### Analyse real logs (live providers)
+
+By default the server demo replays scripted telemetry. To collect and analyse
+**real system logs**, point it at a live provider (Linux):
+
+```bash
+# auditd (recommended): tail /var/log/audit/audit.log
+sudo apt install -y auditd
+sudo systemctl start auditd
+sudo auditctl -a always,exit -F arch=b64 -S execve,openat,connect,setuid
+sudo python scripts/run_server.py --provider auditd --host 0.0.0.0 --auth
+
+# eBPF via BCC (kernel-headers dependent) or Tracee:
+sudo python scripts/run_server.py --provider bpf --host 0.0.0.0
+sudo python scripts/run_server.py --provider tracee --host 0.0.0.0
+```
+
+Live providers learn a behavioural baseline for `--baseline-windows` ticks
+(default 10, ~20s at the 2s polling interval), then continuously score rolling
+windows of real activity. `python scripts/self_test_kernel.py --provider auditd
+--ensure-rules --duration 10` validates a provider before running the server.
+
 ### Run the tests
 
 ```bash
