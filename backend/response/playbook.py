@@ -37,6 +37,11 @@ DEFAULT_RULES: list[dict[str, Any]] = [
         "when": {"severity": ["medium"]},
         "actions": ["freeze_process"],
     },
+    {
+        "name": "low_watch",
+        "when": {"severity": ["low"]},
+        "actions": ["freeze_process"],
+    },
 ]
 
 

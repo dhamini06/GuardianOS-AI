@@ -77,10 +77,10 @@ def test_medium_severity_only_freezes(attack_events):
     assert {a.action_type for a in actions} == {"freeze_process"}
 
 
-def test_low_severity_no_actions(attack_events):
+def test_low_severity_freezes(attack_events):
     vector = FeatureExtractor().extract(attack_events)[0]
     actions = PlaybookEngine.load().decide(vector, _result(severity=Severity.LOW), _explanation())
-    assert actions == []
+    assert {a.action_type for a in actions} == {"freeze_process"}
 
 
 def test_technique_rule_triggers_block_without_severity():
@@ -88,8 +88,9 @@ def test_technique_rule_triggers_block_without_severity():
     actions = PlaybookEngine.load().decide(
         vector, _result(severity=Severity.LOW), _explanation(techniques=["T1105"])
     )
-    assert [a.action_type for a in actions] == ["block_ip"]
-    assert actions[0].target["ip"] == "203.0.113.9"
+    assert "block_ip" in {a.action_type for a in actions}
+    block = next(a for a in actions if a.action_type == "block_ip")
+    assert block.target["ip"] == "203.0.113.9"
 
 
 def test_actions_deduplicated_across_rules(attack_events):
@@ -123,8 +124,9 @@ def test_persistence_technique_quarantines_write_targets():
     actions = PlaybookEngine.load().decide(
         vector, _result(severity=Severity.LOW), _explanation(techniques=["T1053.003"])
     )
-    assert [a.action_type for a in actions] == ["quarantine_file"]
-    assert actions[0].target["path"] == "/tmp/evil.sh"
+    assert "quarantine_file" in {a.action_type for a in actions}
+    quarantine = next(a for a in actions if a.action_type == "quarantine_file")
+    assert quarantine.target["path"] == "/tmp/evil.sh"
 
 
 def test_not_flagged_returns_empty(attack_events):

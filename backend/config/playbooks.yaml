@@ -20,6 +20,12 @@ playbook:
     actions:
       - freeze_process
 
+  - name: low_watch
+    when:
+      severity: [low]
+    actions:
+      - freeze_process
+
   - name: command_and_control_egress
     when:
       techniques: [T1105, T1059.004, T1071.001]
