@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 
@@ -79,6 +80,7 @@ class GuardianPipeline:
             dry_run=config.response.dry_run,
             audit=self.audit,
             signer=self.signer,
+            persist_path=Path(config.data_dir) / config.response.containment_path if config.data_dir else None,
         )
         self.gate = ApprovalGate(
             auto_approve_destructive=config.response.auto_approve_destructive,
@@ -103,7 +105,7 @@ class GuardianPipeline:
         self._min_baseline_samples = config.detection.min_baseline_samples
         self._learning_ticks = 0
         self._windows_since_refit = 0
-        self.reports: list[ThreatReport] = []
+        self.reports: deque[ThreatReport] = deque(maxlen=1000)
         # chain_key -> (fingerprint, DetectionResult); avoids re-scoring
         # chains whose events have not changed since the previous window.
         self._chain_cache: dict[str, tuple[tuple, DetectionResult]] = {}
@@ -311,7 +313,7 @@ class GuardianPipeline:
             if not (0 <= action_index < len(report.actions)):
                 return None
             action = report.actions[action_index]
-            self.gate.approve(action, actor=actor)
+            self.gate.approve(action, actor=actor, report_id=report.report_id)
             self.executor.execute(action, report_id=report.report_id)
             return report
         return None

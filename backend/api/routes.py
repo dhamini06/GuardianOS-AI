@@ -91,7 +91,7 @@ def threats(
     limit: int = Query(50, ge=1, le=500),
 ) -> list[dict]:
     pipeline = _pipeline(state)
-    return [report.to_dict() for report in reversed(pipeline.reports[-limit:])]
+    return [report.to_dict() for report in reversed(list(pipeline.reports)[-limit:])]
 
 
 @api_router.get(
@@ -152,7 +152,7 @@ def reject_action(
     pipeline = _pipeline(state)
     report = _find_report(pipeline, report_id)
     action = _action_or_404(report, action_index)
-    pipeline.gate.reject(action, actor=user.name)
+    pipeline.gate.reject(action, actor=user.name, report_id=report_id)
     logger.info("Action %d of report %s rejected by %s", action_index, report_id, user.name)
     return report.to_dict()
 

@@ -53,15 +53,27 @@ class ApprovalGate:
             self._audit("auto_approved", action)
         return action
 
-    def approve(self, action: ResponseAction, *, actor: str = "analyst") -> ResponseAction:
+    def approve(self, action: ResponseAction, *, actor: str = "analyst", report_id: str | None = None) -> ResponseAction:
         """Human-approved: promote to APPROVED and execute."""
+        if action.status != ActionStatus.PENDING_APPROVAL:
+            logger.warning(
+                "approve() called on action with status %s; ignoring.",
+                action.status.value,
+            )
+            return action
         action.status = ActionStatus.APPROVED
-        self._audit("approved", action, actor=actor)
+        self._audit("approved", action, actor=actor, report_id=report_id)
         return action
 
-    def reject(self, action: ResponseAction, *, actor: str = "analyst") -> ResponseAction:
+    def reject(self, action: ResponseAction, *, actor: str = "analyst", report_id: str | None = None) -> ResponseAction:
+        if action.status != ActionStatus.PENDING_APPROVAL:
+            logger.warning(
+                "reject() called on action with status %s; ignoring.",
+                action.status.value,
+            )
+            return action
         action.status = ActionStatus.REJECTED
-        self._audit("rejected", action, actor=actor)
+        self._audit("rejected", action, actor=actor, report_id=report_id)
         return action
 
     def _audit(
@@ -70,7 +82,8 @@ class ApprovalGate:
         action: ResponseAction,
         *,
         actor: str = "system",
+        report_id: str | None = None,
     ) -> None:
         if self.audit is None:
             return
-        self.audit.record(event, actor=actor, data={"action": action.to_dict()}, signer=self.signer)
+        self.audit.record(event, report_id=report_id, actor=actor, data={"action": action.to_dict()}, signer=self.signer)

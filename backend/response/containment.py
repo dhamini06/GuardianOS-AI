@@ -13,6 +13,7 @@ raises :class:`ContainmentError` instead of issuing unsafe commands.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import time
@@ -123,6 +124,7 @@ class ContainmentManager:
         runner: SystemRunner | None = None,
         audit: AuditTrail | None = None,
         signer: Signer | None = None,
+        persist_path: str | Path | None = None,
     ) -> None:
         self.dry_run = dry_run
         self.quarantine_dir = quarantine_dir
@@ -130,6 +132,9 @@ class ContainmentManager:
         self._audit = audit
         self._signer = signer
         self._entries: list[ContainmentEntry] = []
+        self._persist_path = Path(persist_path) if persist_path else None
+        if self._persist_path is not None:
+            self._load_entries()
 
     @property
     def entries(self) -> list[ContainmentEntry]:
@@ -142,6 +147,7 @@ class ContainmentManager:
             return None
         entry = handler(action, report_id)
         self._entries.append(entry)
+        self._persist_entry(entry)
         return entry
 
     def rollback(self, entry: ContainmentEntry) -> bool:
@@ -177,6 +183,67 @@ class ContainmentManager:
 
     def contained(self, action_type: str) -> list[ContainmentEntry]:
         return [e for e in self._entries if e.action_type == action_type]
+
+    # -- persistence --------------------------------------------------------
+
+    def _persist_entry(self, entry: ContainmentEntry) -> None:
+        if self._persist_path is None:
+            return
+        self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._persist_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry.to_dict(), sort_keys=True) + "\n")
+
+    def _load_entries(self) -> None:
+        if self._persist_path is None or not self._persist_path.exists():
+            return
+        with self._persist_path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                entry = ContainmentEntry(
+                    action_type=data["action_type"],
+                    target=data["target"],
+                    description=data.get("description", ""),
+                    reversible=data.get("reversible", False),
+                    undo=self._reconstruct_undo(data["action_type"], data["target"]),
+                    report_id=data.get("report_id"),
+                )
+                entry.entry_id = data.get("entry_id", entry.entry_id)
+                entry.timestamp = data.get("timestamp", entry.timestamp)
+                self._entries.append(entry)
+        if self._entries:
+            logger.info(
+                "Loaded %d persisted containment entries from %s",
+                len(self._entries),
+                self._persist_path,
+            )
+
+    def _reconstruct_undo(self, action_type: str, target: dict) -> Callable[[], None] | None:
+        if action_type == "freeze_process":
+            pid = int(target["pid"])
+            def undo_freeze() -> None:
+                if not self.dry_run:
+                    self._runner.resume(pid)
+            return undo_freeze
+        if action_type == "block_ip":
+            ip = target["ip"]
+            def undo_block() -> None:
+                if not self.dry_run:
+                    self._runner.run(["nft", "delete", "element", NFT_TABLE, NFT_SET, f"{{{ip}}}"])
+            return undo_block
+        if action_type == "quarantine_file":
+            src = Path(target["path"])
+            dest = Path(target["quarantined_at"])
+            def undo_quarantine() -> None:
+                if not self.dry_run and dest.exists() and not src.exists():
+                    self._runner.move(str(dest), str(src))
+            return undo_quarantine
+        return None
 
     # -- action handlers ---------------------------------------------------
     def _apply_freeze_process(self, action: ResponseAction, report_id: str | None) -> ContainmentEntry:

@@ -20,8 +20,12 @@ htmlcov/
 # Runtime artifacts
 logs/
 data/
-data/
 *.log
+
+# Secrets
+.env
+.env.*
+.env.local
 
 # OS
 .DS_Store

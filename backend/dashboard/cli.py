@@ -90,7 +90,7 @@ class CliDashboard:
         table.add_column("Score", width=6)
         table.add_column("MITRE", width=20)
         table.add_column("Actions", width=14)
-        for report in reversed(self.pipeline.reports[-12:]):
+        for report in reversed(list(self.pipeline.reports)[-12:]):
             d = report.detection
             table.add_row(
                 time.strftime("%H:%M:%S", time.localtime(report.timestamp)),

@@ -21,7 +21,6 @@ detection:
   contamination: 0.01         # expected anomaly share for Isolation Forest
   n_estimators: 200
   max_samples: 256
-  normalise_threshold: 0.75   # score above which a sample is "normal" scale max
   flagged_threshold: 0.60     # normalised anomaly score to be considered a threat
   min_baseline_samples: 25    # feature vectors required before baseline fits
   min_learning_windows: 5     # live providers: learning ticks before detection starts
@@ -42,6 +41,7 @@ response:
   dry_run: true               # MVP is always dry-run safe
   playbook_path: null         # YAML playbook rules; null = config/playbooks.yaml built-ins
   audit_path: audit.jsonl     # append-only, signed audit trail under data_dir
+  containment_path: containment.jsonl  # persisted rollback entries under data_dir
   signing_secret: null        # HMAC secret for audit signatures; set via GUARDIAN_SIGNING_SECRET
 
 storage:

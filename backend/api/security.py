@@ -19,11 +19,16 @@ from typing import TYPE_CHECKING, Annotated, Protocol
 from fastapi import Depends, HTTPException, Request, status
 
 from backend.core.config import AuthConfig
+from backend.core.logging import get_logger
 
 if TYPE_CHECKING:
     from backend.api.changes import ChangeLog
     from backend.api.driver import PipelineDriver
     from backend.pipeline import GuardianPipeline
+
+logger = get_logger("api.security")
+
+DEFAULT_TOKENS = {"change-me-admin", "change-me-analyst", "change-me-viewer"}
 
 ROLE_LEVEL = {"viewer": 0, "analyst": 1, "admin": 2}
 ALL_ROLES = frozenset(ROLE_LEVEL)
@@ -70,6 +75,12 @@ class Authenticator:
         admin_token = os.environ.get("GUARDIAN_ADMIN_TOKEN")
         if admin_token:
             self._tokens[admin_token] = User(name="admin", roles=frozenset({"admin"}))
+        if self.enabled and self._tokens.keys() & DEFAULT_TOKENS:
+            logger.warning(
+                "Auth is enabled but one or more tokens match the default values "
+                "(change-me-admin/analyst/viewer). Set GUARDIAN_TOKEN_<NAME> env "
+                "vars or change tokens in config for production use."
+            )
 
     def authenticate(self, token: str | None) -> User | None:
         if not token:

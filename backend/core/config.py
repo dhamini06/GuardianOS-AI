@@ -39,7 +39,6 @@ class DetectionConfig:
     contamination: float = 0.01
     n_estimators: int = 200
     max_samples: int = 256
-    normalise_threshold: float = 0.75
     flagged_threshold: float = 0.6
     min_baseline_samples: int = 25
     min_learning_windows: int = 5  # live providers: learning ticks before detection starts
@@ -56,6 +55,7 @@ class ResponseConfig:
     dry_run: bool = True
     playbook_path: str | None = None  # YAML playbook rules; None = built-in defaults
     audit_path: str = "audit.jsonl"  # append-only, signed audit trail under data_dir
+    containment_path: str = "containment.jsonl"  # persisted rollback entries under data_dir
     signing_secret: str | None = None  # HMAC secret for audit signatures (env override recommended)
 
 
