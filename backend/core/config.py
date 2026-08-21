@@ -80,6 +80,7 @@ class ServerConfig:
     host: str = "127.0.0.1"
     port: int = 8000
     refresh_seconds: float = 1.0  # driver tick + WebSocket push cadence
+    rate_limit_rpm: int = 60  # per-IP requests per minute (0 = unlimited)
 
 
 @dataclass(slots=True)

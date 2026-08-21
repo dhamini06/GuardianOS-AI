@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.api.changes import ChangeLog
 from backend.api.driver import PipelineDriver, TickFn
+from backend.api.ratelimit import RateLimitMiddleware
 from backend.api.routes import api_router, ws_router
 from backend.api.security import Authenticator
 from backend.api.state import RuntimeState
@@ -65,6 +66,11 @@ def create_app(
 
     app = FastAPI(title="GuardianOS-AI API", version="0.1.0", lifespan=lifespan)
     app.state.guardian = state
+
+    rpm = config.server.rate_limit_rpm
+    if rpm > 0:
+        app.add_middleware(RateLimitMiddleware, requests_per_minute=rpm)
+
     app.include_router(api_router)
     app.include_router(ws_router)
 

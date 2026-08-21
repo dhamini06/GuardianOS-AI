@@ -58,6 +58,7 @@ server:
   host: 127.0.0.1
   port: 8000
   refresh_seconds: 1.0   # pipeline driver tick + WebSocket push cadence
+  rate_limit_rpm: 60      # per-IP requests per minute (0 = unlimited)
 
 auth:
   enabled: false          # demo default (all roles); enable + set tokens in production

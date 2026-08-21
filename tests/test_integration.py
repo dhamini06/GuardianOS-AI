@@ -286,6 +286,53 @@ def test_concurrent_feedback_record(tmp_path):
 
     assert not errors
     assert len(ledger.entries) == 10
-    # File should be valid JSONL.
     lines = path.read_text().strip().splitlines()
     assert len(lines) == 10
+
+
+# ── Rate limiting tests ──────────────────────────────────────────────────────
+
+def test_rate_limit_allows_normal_traffic(tmp_path):
+    config = AppConfig.load(overrides={"data_dir": str(tmp_path), "server.rate_limit_rpm": 120})
+    pipeline = _detected_pipeline(config)
+    app = create_app(pipeline, config, start_driver=False)
+    try:
+        with TestClient(app) as client:
+            for _ in range(10):
+                resp = client.get("/api/health")
+                assert resp.status_code == 200
+    finally:
+        pipeline.stop()
+
+
+def test_rate_limit_returns_429_when_exceeded(tmp_path):
+    config = AppConfig.load(overrides={"data_dir": str(tmp_path), "server.rate_limit_rpm": 5})
+    pipeline = _detected_pipeline(config)
+    app = create_app(pipeline, config, start_driver=False)
+    try:
+        with TestClient(app) as client:
+            for _ in range(5):
+                client.get("/api/health")
+            resp = client.get("/api/health")
+            assert resp.status_code == 429
+            assert "Rate limit exceeded" in resp.json()["detail"]
+            assert "Retry-After" in resp.headers
+    finally:
+        pipeline.stop()
+
+
+def test_rate_limit_does_not_apply_to_static(tmp_path):
+    config = AppConfig.load(overrides={"data_dir": str(tmp_path), "server.rate_limit_rpm": 2})
+    pipeline = _detected_pipeline(config)
+    app = create_app(pipeline, config, start_driver=False)
+    try:
+        with TestClient(app) as client:
+            for _ in range(10):
+                resp = client.get("/api/health")
+                if resp.status_code == 429:
+                    break
+            # Static files are exempt from rate limiting.
+            for _ in range(10):
+                assert client.get("/static/favicon.svg").status_code == 200
+    finally:
+        pipeline.stop()
