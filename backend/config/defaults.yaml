@@ -21,7 +21,7 @@ detection:
   contamination: 0.01         # expected anomaly share for Isolation Forest
   n_estimators: 200
   max_samples: 256
-  flagged_threshold: 0.60     # normalised anomaly score to be considered a threat
+  flagged_threshold: 0.40     # normalised anomaly score to be considered a threat
   min_baseline_samples: 25    # feature vectors required before baseline fits
   min_learning_windows: 5     # live providers: learning ticks before detection starts
   model_path: null            # persisted model path; null = in-memory baseline
