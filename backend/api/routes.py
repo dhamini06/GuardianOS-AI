@@ -67,6 +67,36 @@ def health(state: GuardianState) -> dict:
     }
 
 
+@api_router.get("/metrics")
+def metrics(state: GuardianState) -> dict:
+    """Live dashboard metrics: severity breakdown, feedback stats, uptime."""
+    import time
+
+    pipeline = _pipeline(state)
+    severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    for report in pipeline.reports:
+        sev = report.detection.severity.value
+        severity_counts[sev] = severity_counts.get(sev, 0) + 1
+
+    action_stats = {"executed": 0, "pending_approval": 0, "rejected": 0, "recommended": 0}
+    for report in pipeline.reports:
+        for action in report.actions:
+            key = action.status.value
+            action_stats[key] = action_stats.get(key, 0) + 1
+
+    return {
+        "uptime_seconds": time.time() - pipeline._start_time if hasattr(pipeline, "_start_time") else 0,
+        "total_reports": len(pipeline.reports),
+        "severity_counts": severity_counts,
+        "action_stats": action_stats,
+        "feedback": pipeline.feedback.summary(),
+        "baseline_samples": len(pipeline._baseline),
+        "chain_cache_size": len(pipeline._chain_cache),
+        "learning": pipeline.learning,
+        "telemetry": pipeline.telemetry_status(),
+    }
+
+
 # -- read-only (viewer+) --------------------------------------------------
 @api_router.get(
     "/events",

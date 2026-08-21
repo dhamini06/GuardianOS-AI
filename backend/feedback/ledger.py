@@ -10,6 +10,7 @@ are persisted as JSONL so the model keeps learning between deployments.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -33,6 +34,7 @@ class FeedbackLedger:
     def __init__(self, path: str | Path | None = None) -> None:
         self._path = Path(path) if path else None
         self._entries: dict[str, dict] = {}
+        self._lock = threading.Lock()
         if self._path and self._path.exists():
             self._load()
 
@@ -54,11 +56,12 @@ class FeedbackLedger:
             "note": note,
             "timestamp": time.time(),
         }
-        changed = self._entries.get(chain_key, {}).get("verdict") != verdict
-        self._entries[chain_key] = entry
-        if self._path:
-            self.save()
-        return changed
+        with self._lock:
+            changed = self._entries.get(chain_key, {}).get("verdict") != verdict
+            self._entries[chain_key] = entry
+            if self._path:
+                self._save_unlocked()
+            return changed
 
     def verdict_for(self, chain_key: str) -> str | None:
         entry = self._entries.get(chain_key)
@@ -80,6 +83,10 @@ class FeedbackLedger:
         return {"benign": len(self.benign_keys), "malicious": len(self.malicious_keys)}
 
     def save(self) -> None:
+        with self._lock:
+            self._save_unlocked()
+
+    def _save_unlocked(self) -> None:
         if not self._path:
             return
         self._path.parent.mkdir(parents=True, exist_ok=True)

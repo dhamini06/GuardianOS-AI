@@ -10,6 +10,7 @@ independently replaceable component wired together here (composition root).
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from collections import deque
 from collections.abc import Callable
@@ -116,6 +117,7 @@ class GuardianPipeline:
 
     # -- lifecycle --------------------------------------------------------
     def start(self) -> None:
+        self._start_time = time.time()
         self.telemetry.start()
         model_path = self.config.detection.model_path
         if self.config.detection.autoload and model_path and Path(model_path).exists():
