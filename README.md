@@ -1,15 +1,47 @@
 # GuardianOS-AI
 
-**AI-powered, explainable Linux security assistant for kernel-level intrusion
-and behavioural threat detection.**
+**AI-Powered Explainable Linux Security Assistant for Real-Time Kernel-Level
+Intrusion Detection and Automated Threat Response.**
 
-GuardianOS-AI is not an antivirus. It is not a signature-based IDS. It is not a
-log viewer. It is an AI security analyst that runs on Linux, learns what normal
-behaviour *looks like for your specific machine*, detects when behaviour stops
-making sense, explains *why*, and recommends safe remediation.
+---
 
-Instead of asking *"does this match a known attack?"*, GuardianOS-AI asks
-*"does this behaviour make sense for this machine?"*
+## Objective
+
+Traditional security tools rely on signatures and rules — they can only catch
+what they already know. GuardianOS-AI takes a fundamentally different approach:
+it **watches how your Linux system behaves**, learns what "normal" looks like
+for *your specific machine*, and flags anything that doesn't fit.
+
+**The goal:** Build a production-grade, end-to-end security assistant that:
+
+1. **Ingests kernel-level telemetry** from auditd, eBPF, or Tracee — capturing
+   every process spawn, file access, network connection, and privilege change
+   at the syscall level.
+2. **Learns a per-machine behavioural baseline** using unsupervised machine
+   learning (Isolation Forest) — no attack labels, no rule lists, no
+   signatures. The system builds its own understanding of "normal" from
+   observed activity.
+3. **Detects anomalies in real time** via a hybrid approach: ML-driven
+   behavioural deviation combined with hard-signal detection of known-bad
+   patterns (exec from `/tmp`, privilege escalation, high-port egress,
+   interpreter chains) so classic kill chains are never missed.
+4. **Explains every threat** — each detection ships with human-readable
+   reasoning, the reconstructed process chain, and automatic MITRE ATT&CK
+   mapping, so analysts understand *why* something was flagged.
+5. **Recommends safe remediation** with an approval workflow: destructive
+   actions (kill process, block IP, quarantine file) always require human
+   confirmation. Full rollback support. Dry-run mode by default.
+6. **Presents a live SOC-style dashboard** — a React SPA with real-time event
+   streaming, threat timelines, severity badges, AI explanations, MITRE
+   mapping, response actions, and system health monitoring.
+7. **Runs in production** — systemd service, Docker deployment, HMAC-signed
+   audit trail, RBAC authentication, rate limiting, CI/CD pipeline, and
+   security scanning.
+
+### In one sentence
+
+> GuardianOS-AI replaces "does this match a known attack?" with
+> **"does this behaviour make sense for this machine?"**
 
 ---
 
@@ -140,7 +172,7 @@ Roles: `viewer` (read) < `analyst` (label threats) < `admin` (approve/reject/rol
 
 ```bash
 pip install -e ".[dev]"        # pytest + ruff + httpx
-pytest                         # 196 tests across every layer
+pytest                         # 211 tests across every layer
 ```
 
 ## Quality gates
@@ -171,6 +203,26 @@ Deployment artifacts live in `packaging/`: a systemd unit
 (`guardian-os.apparmor`), a `Dockerfile`, an RPM spec and Debian control
 metadata. CI (GitHub Actions) runs lint/type gates, a pytest matrix on Python
 3.11/3.12, the security scan and a wheel build.
+
+## Deployment on Linux (Kali/Ubuntu)
+
+```bash
+sudo apt install -y python3 python3-venv python3-pip git auditd
+git clone https://github.com/dhamini06/GuardianOS-AI.git
+cd GuardianOS-AI
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+
+# Configure audit rules (persistent)
+echo '-a always,exit -F arch=b64 -S connect,execve,setuid,openat' \
+  | sudo tee /etc/audit/rules.d/guardian.rules
+sudo augenrules --load && sudo systemctl start auditd
+
+# Run the server (open access)
+sudo .venv/bin/python scripts/run_server.py --provider auditd --host 0.0.0.0
+
+# Dashboard: http://localhost:8000
+```
 
 ### Production configuration
 
@@ -211,7 +263,7 @@ export GUARDIAN_SIGNING_SECRET=<random>
 ├── .github/workflows/   # CI: lint, types, test matrix, security, wheel
 ├── docs/                # Architecture, interfaces, milestones
 ├── scripts/             # Demo runners, server, security scans, benchmarks
-├── tests/               # 196 tests across every layer (+ opt-in benchmarks)
+├── tests/               # 211 tests across every layer (+ opt-in benchmarks)
 ├── pyproject.toml       # Packaging + tooling config (ruff/mypy/pip-audit)
 ├── requirements.txt
 ├── Dockerfile
