@@ -140,6 +140,8 @@ class GuardianPipeline:
         """Collect one telemetry tick into the buffer without scoring it."""
         events = self.telemetry.collect()
         self.buffer.extend(events)
+        if events and self.storage is not None and self.config.storage.save_events:
+            self.storage.save_events(events)
         return len(events)
 
     def accumulate_baseline(self) -> int:
