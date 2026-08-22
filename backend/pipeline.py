@@ -21,6 +21,7 @@ from backend.core.config import AppConfig
 from backend.core.events import KernelEvent
 from backend.core.logging import get_logger
 from backend.detection.isolation_forest import IsolationForestDetector
+from backend.detection.scoring import signal_anomaly
 from backend.explainability.explainer import RuleBasedExplainer
 from backend.explainability.llm import LlmNarrativeGenerator
 from backend.features.extractor import FeatureExtractor, ProcessFeatures
@@ -102,6 +103,7 @@ class GuardianPipeline:
             )
 
         self.learning = True
+        self._use_signal_only = False
         self._baseline: list[ProcessFeatures] = []
         self._min_baseline_samples = config.detection.min_baseline_samples
         self._learning_ticks = 0
@@ -204,6 +206,16 @@ class GuardianPipeline:
         # chains, starving the detector of "normal").
         if not self._baseline:
             self._add_to_baseline(self.extractor.extract(self.buffer.peek()))
+        if not self._baseline:
+            logger.warning(
+                "No baseline vectors extracted; entering detection-only mode. "
+                "The detector will rely on hard-signal rules until enough "
+                "baseline data accumulates."
+            )
+            self._use_signal_only = True
+            self.learning = False
+            return
+        self._use_signal_only = False
         if not self.is_ready_to_detect():
             logger.warning(
                 "Completing learning with %d samples (below suggested %d)",
@@ -230,6 +242,27 @@ class GuardianPipeline:
             cached = self._chain_cache.get(vector.chain_key)
             if cached is not None and cached[0] == fingerprint:
                 result = cached[1]
+            elif self._use_signal_only or not self.detector.is_trained:
+                sig = signal_anomaly(vector)
+                from backend.core.analysis import Severity
+                result = DetectionResult(
+                    pid=vector.pid,
+                    exe=vector.exe,
+                    raw_score=sig,
+                    anomaly_score=round(sig, 4),
+                    confidence=round(sig, 4),
+                    severity=Severity.INFO if sig < 0.40 else Severity.LOW if sig < 0.60 else Severity.MEDIUM,
+                    flagged=sig >= self.detector._flagged_threshold if hasattr(self.detector, '_flagged_threshold') else sig >= 0.40,
+                    contributing_features={},
+                    context={
+                        "chain_key": vector.chain_key,
+                        "window": [vector.window_start, vector.window_end],
+                        "ml_score": 0.0,
+                        "signal_score": round(sig, 4),
+                        "mode": "signal_only",
+                    },
+                )
+                self._chain_cache[vector.chain_key] = (fingerprint, result)
             else:
                 result = self.detector.predict(vector)
                 self._chain_cache[vector.chain_key] = (fingerprint, result)
